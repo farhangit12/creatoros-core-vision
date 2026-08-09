@@ -18,6 +18,8 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as AppAiUsageRouteImport } from './routes/_app.ai-usage'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppNotificationsRouteImport } from './routes/_app.notifications'
+import { Route as AppProfileRouteImport } from './routes/_app.profile'
+import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppUpcomingRouteImport } from './routes/_app.upcoming'
 
 const IndexRoute = IndexRouteImport.update({
@@ -64,6 +66,16 @@ const AppNotificationsRoute = AppNotificationsRouteImport.update({
   path: '/notifications',
   getParentRoute: () => AppRoute,
 } as any)
+const AppProfileRoute = AppProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppUpcomingRoute = AppUpcomingRouteImport.update({
   id: '/upcoming',
   path: '/upcoming',
@@ -79,6 +91,8 @@ export interface FileRoutesByFullPath {
   '/ai-usage': typeof AppAiUsageRoute
   '/dashboard': typeof AppDashboardRoute
   '/notifications': typeof AppNotificationsRoute
+  '/profile': typeof AppProfileRoute
+  '/settings': typeof AppSettingsRoute
   '/upcoming': typeof AppUpcomingRoute
 }
 export interface FileRoutesByTo {
@@ -90,6 +104,8 @@ export interface FileRoutesByTo {
   '/ai-usage': typeof AppAiUsageRoute
   '/dashboard': typeof AppDashboardRoute
   '/notifications': typeof AppNotificationsRoute
+  '/profile': typeof AppProfileRoute
+  '/settings': typeof AppSettingsRoute
   '/upcoming': typeof AppUpcomingRoute
 }
 export interface FileRoutesById {
@@ -103,6 +119,8 @@ export interface FileRoutesById {
   '/_app/ai-usage': typeof AppAiUsageRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/notifications': typeof AppNotificationsRoute
+  '/_app/profile': typeof AppProfileRoute
+  '/_app/settings': typeof AppSettingsRoute
   '/_app/upcoming': typeof AppUpcomingRoute
 }
 export interface FileRouteTypes {
@@ -116,6 +134,8 @@ export interface FileRouteTypes {
     | '/ai-usage'
     | '/dashboard'
     | '/notifications'
+    | '/profile'
+    | '/settings'
     | '/upcoming'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -127,6 +147,8 @@ export interface FileRouteTypes {
     | '/ai-usage'
     | '/dashboard'
     | '/notifications'
+    | '/profile'
+    | '/settings'
     | '/upcoming'
   id:
     | '__root__'
@@ -139,6 +161,8 @@ export interface FileRouteTypes {
     | '/_app/ai-usage'
     | '/_app/dashboard'
     | '/_app/notifications'
+    | '/_app/profile'
+    | '/_app/settings'
     | '/_app/upcoming'
   fileRoutesById: FileRoutesById
 }
@@ -216,6 +240,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppNotificationsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/profile': {
+      id: '/_app/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AppProfileRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/upcoming': {
       id: '/_app/upcoming'
       path: '/upcoming'
@@ -230,6 +268,8 @@ interface AppRouteChildren {
   AppAiUsageRoute: typeof AppAiUsageRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppNotificationsRoute: typeof AppNotificationsRoute
+  AppProfileRoute: typeof AppProfileRoute
+  AppSettingsRoute: typeof AppSettingsRoute
   AppUpcomingRoute: typeof AppUpcomingRoute
 }
 
@@ -237,6 +277,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppAiUsageRoute: AppAiUsageRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppNotificationsRoute: AppNotificationsRoute,
+  AppProfileRoute: AppProfileRoute,
+  AppSettingsRoute: AppSettingsRoute,
   AppUpcomingRoute: AppUpcomingRoute,
 }
 
