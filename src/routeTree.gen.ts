@@ -10,33 +10,301 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppRouteImport } from './routes/_app'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as SignupRouteImport } from './routes/signup'
+import { Route as AppAiUsageRouteImport } from './routes/_app.ai-usage'
+import { Route as AppAnalyticsRouteImport } from './routes/_app.analytics'
+import { Route as AppAutomationRouteImport } from './routes/_app.automation'
+import { Route as AppChatRouteImport } from './routes/_app.chat'
+import { Route as AppContentPlannerRouteImport } from './routes/_app.content-planner'
+import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
+import { Route as AppFilesRouteImport } from './routes/_app.files'
+import { Route as AppImageStudioRouteImport } from './routes/_app.image-studio'
+import { Route as AppNotificationsRouteImport } from './routes/_app.notifications'
+import { Route as AppProfileRouteImport } from './routes/_app.profile'
+import { Route as AppProjectsRouteImport } from './routes/_app.projects'
+import { Route as AppScriptStudioRouteImport } from './routes/_app.script-studio'
+import { Route as AppSettingsRouteImport } from './routes/_app.settings'
+import { Route as AppTemplatesRouteImport } from './routes/_app.templates'
+import { Route as AppThumbnailStudioRouteImport } from './routes/_app.thumbnail-studio'
+import { Route as AppUpcomingRouteImport } from './routes/_app.upcoming'
+import { Route as AppVideoStudioRouteImport } from './routes/_app.video-studio'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppAiUsageRoute = AppAiUsageRouteImport.update({
+  id: '/ai-usage',
+  path: '/ai-usage',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAutomationRoute = AppAutomationRouteImport.update({
+  id: '/automation',
+  path: '/automation',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppChatRoute = AppChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppContentPlannerRoute = AppContentPlannerRouteImport.update({
+  id: '/content-planner',
+  path: '/content-planner',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDashboardRoute = AppDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFilesRoute = AppFilesRouteImport.update({
+  id: '/files',
+  path: '/files',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppImageStudioRoute = AppImageStudioRouteImport.update({
+  id: '/image-studio',
+  path: '/image-studio',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNotificationsRoute = AppNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppProfileRoute = AppProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppProjectsRoute = AppProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppScriptStudioRoute = AppScriptStudioRouteImport.update({
+  id: '/script-studio',
+  path: '/script-studio',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTemplatesRoute = AppTemplatesRouteImport.update({
+  id: '/templates',
+  path: '/templates',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppThumbnailStudioRoute = AppThumbnailStudioRouteImport.update({
+  id: '/thumbnail-studio',
+  path: '/thumbnail-studio',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppUpcomingRoute = AppUpcomingRouteImport.update({
+  id: '/upcoming',
+  path: '/upcoming',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppVideoStudioRoute = AppVideoStudioRouteImport.update({
+  id: '/video-studio',
+  path: '/video-studio',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/forgot-password': typeof ForgotPasswordRoute
+  '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
+  '/signup': typeof SignupRoute
+  '/ai-usage': typeof AppAiUsageRoute
+  '/analytics': typeof AppAnalyticsRoute
+  '/automation': typeof AppAutomationRoute
+  '/chat': typeof AppChatRoute
+  '/content-planner': typeof AppContentPlannerRoute
+  '/dashboard': typeof AppDashboardRoute
+  '/files': typeof AppFilesRoute
+  '/image-studio': typeof AppImageStudioRoute
+  '/notifications': typeof AppNotificationsRoute
+  '/profile': typeof AppProfileRoute
+  '/projects': typeof AppProjectsRoute
+  '/script-studio': typeof AppScriptStudioRoute
+  '/settings': typeof AppSettingsRoute
+  '/templates': typeof AppTemplatesRoute
+  '/thumbnail-studio': typeof AppThumbnailStudioRoute
+  '/upcoming': typeof AppUpcomingRoute
+  '/video-studio': typeof AppVideoStudioRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/forgot-password': typeof ForgotPasswordRoute
+  '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
+  '/signup': typeof SignupRoute
+  '/ai-usage': typeof AppAiUsageRoute
+  '/analytics': typeof AppAnalyticsRoute
+  '/automation': typeof AppAutomationRoute
+  '/chat': typeof AppChatRoute
+  '/content-planner': typeof AppContentPlannerRoute
+  '/dashboard': typeof AppDashboardRoute
+  '/files': typeof AppFilesRoute
+  '/image-studio': typeof AppImageStudioRoute
+  '/notifications': typeof AppNotificationsRoute
+  '/profile': typeof AppProfileRoute
+  '/projects': typeof AppProjectsRoute
+  '/script-studio': typeof AppScriptStudioRoute
+  '/settings': typeof AppSettingsRoute
+  '/templates': typeof AppTemplatesRoute
+  '/thumbnail-studio': typeof AppThumbnailStudioRoute
+  '/upcoming': typeof AppUpcomingRoute
+  '/video-studio': typeof AppVideoStudioRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_app': typeof AppRouteWithChildren
+  '/forgot-password': typeof ForgotPasswordRoute
+  '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
+  '/signup': typeof SignupRoute
+  '/_app/ai-usage': typeof AppAiUsageRoute
+  '/_app/analytics': typeof AppAnalyticsRoute
+  '/_app/automation': typeof AppAutomationRoute
+  '/_app/chat': typeof AppChatRoute
+  '/_app/content-planner': typeof AppContentPlannerRoute
+  '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/files': typeof AppFilesRoute
+  '/_app/image-studio': typeof AppImageStudioRoute
+  '/_app/notifications': typeof AppNotificationsRoute
+  '/_app/profile': typeof AppProfileRoute
+  '/_app/projects': typeof AppProjectsRoute
+  '/_app/script-studio': typeof AppScriptStudioRoute
+  '/_app/settings': typeof AppSettingsRoute
+  '/_app/templates': typeof AppTemplatesRoute
+  '/_app/thumbnail-studio': typeof AppThumbnailStudioRoute
+  '/_app/upcoming': typeof AppUpcomingRoute
+  '/_app/video-studio': typeof AppVideoStudioRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/forgot-password'
+    | '/login'
+    | '/reset-password'
+    | '/signup'
+    | '/ai-usage'
+    | '/analytics'
+    | '/automation'
+    | '/chat'
+    | '/content-planner'
+    | '/dashboard'
+    | '/files'
+    | '/image-studio'
+    | '/notifications'
+    | '/profile'
+    | '/projects'
+    | '/script-studio'
+    | '/settings'
+    | '/templates'
+    | '/thumbnail-studio'
+    | '/upcoming'
+    | '/video-studio'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/forgot-password'
+    | '/login'
+    | '/reset-password'
+    | '/signup'
+    | '/ai-usage'
+    | '/analytics'
+    | '/automation'
+    | '/chat'
+    | '/content-planner'
+    | '/dashboard'
+    | '/files'
+    | '/image-studio'
+    | '/notifications'
+    | '/profile'
+    | '/projects'
+    | '/script-studio'
+    | '/settings'
+    | '/templates'
+    | '/thumbnail-studio'
+    | '/upcoming'
+    | '/video-studio'
+  id:
+    | '__root__'
+    | '/'
+    | '/_app'
+    | '/forgot-password'
+    | '/login'
+    | '/reset-password'
+    | '/signup'
+    | '/_app/ai-usage'
+    | '/_app/analytics'
+    | '/_app/automation'
+    | '/_app/chat'
+    | '/_app/content-planner'
+    | '/_app/dashboard'
+    | '/_app/files'
+    | '/_app/image-studio'
+    | '/_app/notifications'
+    | '/_app/profile'
+    | '/_app/projects'
+    | '/_app/script-studio'
+    | '/_app/settings'
+    | '/_app/templates'
+    | '/_app/thumbnail-studio'
+    | '/_app/upcoming'
+    | '/_app/video-studio'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
+  LoginRoute: typeof LoginRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
+  SignupRoute: typeof SignupRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,22 +316,213 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app/ai-usage': {
+      id: '/_app/ai-usage'
+      path: '/ai-usage'
+      fullPath: '/ai-usage'
+      preLoaderRoute: typeof AppAiUsageRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/analytics': {
+      id: '/_app/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AppAnalyticsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/automation': {
+      id: '/_app/automation'
+      path: '/automation'
+      fullPath: '/automation'
+      preLoaderRoute: typeof AppAutomationRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/chat': {
+      id: '/_app/chat'
+      path: '/chat'
+      fullPath: '/chat'
+      preLoaderRoute: typeof AppChatRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/content-planner': {
+      id: '/_app/content-planner'
+      path: '/content-planner'
+      fullPath: '/content-planner'
+      preLoaderRoute: typeof AppContentPlannerRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/dashboard': {
+      id: '/_app/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/files': {
+      id: '/_app/files'
+      path: '/files'
+      fullPath: '/files'
+      preLoaderRoute: typeof AppFilesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/image-studio': {
+      id: '/_app/image-studio'
+      path: '/image-studio'
+      fullPath: '/image-studio'
+      preLoaderRoute: typeof AppImageStudioRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/notifications': {
+      id: '/_app/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof AppNotificationsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/profile': {
+      id: '/_app/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AppProfileRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/projects': {
+      id: '/_app/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof AppProjectsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/script-studio': {
+      id: '/_app/script-studio'
+      path: '/script-studio'
+      fullPath: '/script-studio'
+      preLoaderRoute: typeof AppScriptStudioRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/templates': {
+      id: '/_app/templates'
+      path: '/templates'
+      fullPath: '/templates'
+      preLoaderRoute: typeof AppTemplatesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/thumbnail-studio': {
+      id: '/_app/thumbnail-studio'
+      path: '/thumbnail-studio'
+      fullPath: '/thumbnail-studio'
+      preLoaderRoute: typeof AppThumbnailStudioRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/upcoming': {
+      id: '/_app/upcoming'
+      path: '/upcoming'
+      fullPath: '/upcoming'
+      preLoaderRoute: typeof AppUpcomingRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/video-studio': {
+      id: '/_app/video-studio'
+      path: '/video-studio'
+      fullPath: '/video-studio'
+      preLoaderRoute: typeof AppVideoStudioRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
+interface AppRouteChildren {
+  AppAiUsageRoute: typeof AppAiUsageRoute
+  AppAnalyticsRoute: typeof AppAnalyticsRoute
+  AppAutomationRoute: typeof AppAutomationRoute
+  AppChatRoute: typeof AppChatRoute
+  AppContentPlannerRoute: typeof AppContentPlannerRoute
+  AppDashboardRoute: typeof AppDashboardRoute
+  AppFilesRoute: typeof AppFilesRoute
+  AppImageStudioRoute: typeof AppImageStudioRoute
+  AppNotificationsRoute: typeof AppNotificationsRoute
+  AppProfileRoute: typeof AppProfileRoute
+  AppProjectsRoute: typeof AppProjectsRoute
+  AppScriptStudioRoute: typeof AppScriptStudioRoute
+  AppSettingsRoute: typeof AppSettingsRoute
+  AppTemplatesRoute: typeof AppTemplatesRoute
+  AppThumbnailStudioRoute: typeof AppThumbnailStudioRoute
+  AppUpcomingRoute: typeof AppUpcomingRoute
+  AppVideoStudioRoute: typeof AppVideoStudioRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppAiUsageRoute: AppAiUsageRoute,
+  AppAnalyticsRoute: AppAnalyticsRoute,
+  AppAutomationRoute: AppAutomationRoute,
+  AppChatRoute: AppChatRoute,
+  AppContentPlannerRoute: AppContentPlannerRoute,
+  AppDashboardRoute: AppDashboardRoute,
+  AppFilesRoute: AppFilesRoute,
+  AppImageStudioRoute: AppImageStudioRoute,
+  AppNotificationsRoute: AppNotificationsRoute,
+  AppProfileRoute: AppProfileRoute,
+  AppProjectsRoute: AppProjectsRoute,
+  AppScriptStudioRoute: AppScriptStudioRoute,
+  AppSettingsRoute: AppSettingsRoute,
+  AppTemplatesRoute: AppTemplatesRoute,
+  AppThumbnailStudioRoute: AppThumbnailStudioRoute,
+  AppUpcomingRoute: AppUpcomingRoute,
+  AppVideoStudioRoute: AppVideoStudioRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
+  ForgotPasswordRoute: ForgotPasswordRoute,
+  LoginRoute: LoginRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
+  SignupRoute: SignupRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
