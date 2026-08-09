@@ -1,3 +1,4 @@
+import type { LinkProps } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   MessagesSquare,
@@ -21,7 +22,7 @@ import {
 
 export type NavItem = {
   label: string;
-  to: string;
+  to: LinkProps["to"] & string;
   icon: LucideIcon;
   status: "live" | "later";
   badge?: string;
