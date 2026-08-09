@@ -46,15 +46,16 @@ type Action = {
   later?: boolean;
 };
 
-const actions: Action[] = [
-  {
+const primaryAction: Action = {
     title: "Create project",
     body: "Open a new workspace for a client, series or campaign.",
     icon: FolderPlus,
     to: "/projects",
     primary: true,
     later: true,
-  },
+};
+
+const actions: Action[] = [
   {
     title: "New AI chat",
     body: "Think out loud with an assistant that knows your voice.",
@@ -106,7 +107,7 @@ function DashboardPage() {
         <SectionLabel aside={<PhaseBadge />}>Quick actions</SectionLabel>
         <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
           <Link
-            to={actions[0].to}
+            to={primaryAction.to}
             className="group relative flex min-h-[220px] flex-col justify-between overflow-hidden rounded-2xl border border-border bg-surface p-7 transition-colors duration-200 hover:border-accent-brand/40 hover:bg-surface-2"
           >
             <span
@@ -136,7 +137,7 @@ function DashboardPage() {
           </Link>
 
           <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1 lg:gap-3">
-            {actions.slice(1).map((a) => (
+            {actions.map((a) => (
               <Link
                 key={a.title}
                 to={a.to}
