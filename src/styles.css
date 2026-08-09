@@ -4,6 +4,21 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@theme {
+  --font-sans:
+    "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  --ease-os: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 260ms;
+
+  --shadow-floating: 0 8px 24px -8px oklch(0 0 0 / 0.6);
+  --shadow-popover: 0 12px 32px -8px oklch(0 0 0 / 0.65);
+  --shadow-modal: 0 32px 80px -24px oklch(0 0 0 / 0.8);
+}
+
 /*
  * Design system definition.
  *
