@@ -122,8 +122,10 @@ export function Topbar({
             <Link to="/ai-usage">AI usage & credits</Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem asChild variant="destructive">
-            <Link to="/login">Sign out</Link>
+          <DropdownMenuItem asChild>
+            <Link to="/login" className="text-danger focus:text-danger">
+              Sign out
+            </Link>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

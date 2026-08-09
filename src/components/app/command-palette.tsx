@@ -8,14 +8,15 @@ import {
   Search,
 } from "lucide-react";
 import {
-  CommandDialog,
   CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
   CommandSeparator,
+  Command,
 } from "@/components/ui/command";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { navigation } from "@/lib/navigation";
 
 const recents = [
@@ -44,13 +45,10 @@ export function CommandPalette({
   };
 
   return (
-    <CommandDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title="Command palette"
-      description="Search navigation, projects and actions"
-      className="border-border bg-popover shadow-modal"
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="overflow-hidden border-border bg-popover p-0 shadow-modal sm:max-w-[600px]">
+        <DialogTitle className="sr-only">Command palette</DialogTitle>
+        <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.14em] [&_[cmdk-group-heading]]:text-text-subtle [&_[cmdk-group]]:px-2 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:gap-2.5 [&_[cmdk-item]]:rounded-lg [&_[cmdk-item]]:px-2.5 [&_[cmdk-item]]:py-2.5 [&_[cmdk-item]_svg]:size-4">
       <CommandInput
         value={query}
         onValueChange={setQuery}
@@ -123,6 +121,8 @@ export function CommandPalette({
         <span>↑ ↓ navigate · ↵ open · esc close</span>
         <span>CreatorOS</span>
       </div>
-    </CommandDialog>
+        </Command>
+      </DialogContent>
+    </Dialog>
   );
 }
