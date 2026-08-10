@@ -134,8 +134,8 @@ function ChatPageImpl() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [modelId, setModelId] = useState(models[0].id);
-  const [toneValue, setToneValue] = useState(tones[0]);
+  const [modelId, setModelId] = useState<string>(models[0]!.id);
+  const [toneValue, setToneValue] = useState<string>(tones[0]!);
   const genTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
@@ -206,7 +206,7 @@ function ChatPageImpl() {
     setIsGenerating(false);
   }
 
-  const activeModel = models.find((m) => m.id === modelId) ?? models[0];
+  const activeModel = models.find((m) => m.id === modelId) ?? models[0]!;
 
   return (
     <div className="flex h-[calc(100vh-7rem)] min-h-[600px] gap-4">
