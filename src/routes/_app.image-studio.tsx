@@ -62,7 +62,7 @@ const useCases = ["Post", "Story", "Blog header", "Cover art", "B-roll frame"];
 const styles = ["Photoreal", "Illustration", "3D render", "Editorial", "Graphic"];
 const counts = [1, 2, 4] as const;
 
-type Img = { id: string; recommended?: boolean };
+type Img = { id: string; recommended: boolean };
 
 function aspectClass(ratio: string) {
   if (ratio === "9:16") return "aspect-[9/16]";
@@ -90,9 +90,9 @@ function ImageStudioPage() {
   const { id, setId, platform } = usePlatform("instagram");
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
-  const [useCase, setUseCase] = useState(useCases[0]);
-  const [ratio, setRatio] = useState(platform.aspectRatios[0]);
-  const [style, setStyle] = useState(styles[0]);
+  const [useCase, setUseCase] = useState(useCases[0] ?? "Post");
+  const [ratio, setRatio] = useState((platform.aspectRatios[0] ?? "16:9"));
+  const [style, setStyle] = useState(styles[0] ?? "Photoreal");
   const [refStrength, setRefStrength] = useState(50);
   const [count, setCount] = useState<(typeof counts)[number]>(4);
 
@@ -193,7 +193,7 @@ function ImageStudioPage() {
                   <p className="text-[12px] text-text-subtle">Drag an image or browse</p>
                 </div>
                 <Field label={`Reference strength — ${refStrength}%`}>
-                  <Slider value={[refStrength]} min={0} max={100} onValueChange={([v]) => setRefStrength(v)} />
+                  <Slider value={[refStrength]} min={0} max={100} onValueChange={([v]) => setRefStrength(v ?? refStrength)} />
                 </Field>
               </div>
             </Field>
@@ -265,7 +265,7 @@ function ImageStudioPage() {
                             ? ids.filter((x) => x !== img.id)
                             : ids.length < 2
                               ? [...ids, img.id]
-                              : [ids[1], img.id],
+                              : [ids[1] ?? img.id, img.id],
                         )
                       }
                       className={cn(
@@ -357,16 +357,16 @@ function ImageStudioPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <Field label={`Exposure — ${exposure}`}>
-                      <Slider value={[exposure]} min={-50} max={50} onValueChange={([v]) => setExposure(v)} />
+                      <Slider value={[exposure]} min={-50} max={50} onValueChange={([v]) => setExposure(v ?? exposure)} />
                     </Field>
                     <Field label={`Contrast — ${contrast}`}>
-                      <Slider value={[contrast]} min={-50} max={50} onValueChange={([v]) => setContrast(v)} />
+                      <Slider value={[contrast]} min={-50} max={50} onValueChange={([v]) => setContrast(v ?? contrast)} />
                     </Field>
                     <Field label={`Saturation — ${saturation}`}>
-                      <Slider value={[saturation]} min={-50} max={50} onValueChange={([v]) => setSaturation(v)} />
+                      <Slider value={[saturation]} min={-50} max={50} onValueChange={([v]) => setSaturation(v ?? saturation)} />
                     </Field>
                     <Field label={`Warmth — ${warmth}`}>
-                      <Slider value={[warmth]} min={-50} max={50} onValueChange={([v]) => setWarmth(v)} />
+                      <Slider value={[warmth]} min={-50} max={50} onValueChange={([v]) => setWarmth(v ?? warmth)} />
                     </Field>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">

@@ -60,8 +60,8 @@ type Position = (typeof positions)[number];
 type Variation = {
   id: string;
   label: string;
-  recommended?: boolean;
-  rationale?: string;
+  recommended: boolean;
+  rationale: string;
 };
 
 function aspectClass(ratio: string) {
@@ -120,8 +120,8 @@ function ThumbnailFrame({
 function ThumbnailStudioPage() {
   const { id, setId, platform } = usePlatform("youtube");
   const [topic, setTopic] = useState("");
-  const [ratio, setRatio] = useState(platform.aspectRatios[0]);
-  const [style, setStyle] = useState(styles[0]);
+  const [ratio, setRatio] = useState((platform.aspectRatios[0] ?? "16:9"));
+  const [style, setStyle] = useState(styles[0] ?? "Bold text");
   const [status, setStatus] = useState<"idle" | "generating" | "done">("idle");
   const [variations, setVariations] = useState<Variation[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -146,7 +146,10 @@ function ThumbnailStudioPage() {
         id: l,
         label: `Variation ${l}`,
         recommended: i === 0,
-        rationale: i === 0 ? "High-contrast face + bold text tests best for CTR on this topic." : undefined,
+        rationale:
+          i === 0
+            ? "High-contrast face + bold text tests best for CTR on this topic."
+            : "Alternative composition generated from the same prompt.",
       }));
       setVariations(vs);
       setStatus("done");
@@ -167,7 +170,7 @@ function ThumbnailStudioPage() {
       if (h.length === 0) return h;
       const prev = h[h.length - 1];
       setFuture((f) => [overlay, ...f]);
-      setOverlay(prev);
+      setOverlay(prev ?? overlay);
       return h.slice(0, -1);
     });
   }
@@ -177,7 +180,7 @@ function ThumbnailStudioPage() {
       if (f.length === 0) return f;
       const next = f[0];
       setHistory((h) => [...h, overlay]);
-      setOverlay(next);
+      setOverlay(next ?? overlay);
       return f.slice(1);
     });
   }
@@ -285,7 +288,7 @@ function ThumbnailStudioPage() {
                             ? ids.filter((i) => i !== v.id)
                             : ids.length < 2
                               ? [...ids, v.id]
-                              : [ids[1], v.id],
+                              : [ids[1] ?? v.id, v.id],
                         )
                       }
                       className={cn(
@@ -368,7 +371,7 @@ function ThumbnailStudioPage() {
                       min={12}
                       max={48}
                       step={1}
-                      onValueChange={([v]) => setFontSize(v)}
+                      onValueChange={([v]) => setFontSize(v ?? fontSize)}
                     />
                   </Field>
                   <Field label="Text position">
@@ -391,10 +394,10 @@ function ThumbnailStudioPage() {
                   </Field>
                   <div className="grid grid-cols-2 gap-4">
                     <Field label={`Image X — ${posX}%`}>
-                      <Slider value={[posX]} min={0} max={100} onValueChange={([v]) => setPosX(v)} />
+                      <Slider value={[posX]} min={0} max={100} onValueChange={([v]) => setPosX(v ?? posX)} />
                     </Field>
                     <Field label={`Image Y — ${posY}%`}>
-                      <Slider value={[posY]} min={0} max={100} onValueChange={([v]) => setPosY(v)} />
+                      <Slider value={[posY]} min={0} max={100} onValueChange={([v]) => setPosY(v ?? posY)} />
                     </Field>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -450,7 +453,7 @@ function ThumbnailStudioPage() {
                   </p>
                   <ThumbnailFrame
                     ratio={ratio}
-                    overlay={overlay || undefined}
+                    overlay={overlay}
                     fontSize={fontSize}
                     position={position}
                   />

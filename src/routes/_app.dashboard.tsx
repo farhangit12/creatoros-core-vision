@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import type { LinkProps } from "@tanstack/react-router";
 import {
   ArrowUpRight,
   FileText,
@@ -9,14 +10,20 @@ import {
   Sparkles,
   FolderKanban,
   CalendarClock,
+  Upload,
+  Wand2,
+  PlayCircle,
+  Zap,
 } from "lucide-react";
 import {
   EmptyState,
   PhaseBadge,
   SectionLabel,
 } from "@/components/app/primitives";
+import { StatusPill } from "@/components/app/studio-kit";
+import { creditSummary } from "@/lib/creator-data";
 import { Button } from "@/components/ui/button";
-import type { LinkProps } from "@tanstack/react-router";
+import { Progress } from "@/components/ui/progress";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({
@@ -25,7 +32,7 @@ export const Route = createFileRoute("/_app/dashboard")({
       {
         name: "description",
         content:
-          "Your CreatorOS AI home: quick actions, recent projects and workspace activity.",
+          "Your CreatorOS AI home: quick actions, recent projects, generations, credits and what is coming up.",
       },
       { property: "og:title", content: "Dashboard — CreatorOS AI" },
       {
@@ -37,53 +44,62 @@ export const Route = createFileRoute("/_app/dashboard")({
   component: DashboardPage,
 });
 
-type Action = {
+type To = LinkProps["to"] & string;
+
+const quickActions: {
   title: string;
   body: string;
   icon: typeof FolderPlus;
-  to: LinkProps["to"] & string;
-  primary?: boolean;
-  later?: boolean;
-};
-
-const primaryAction: Action = {
-    title: "Create project",
-    body: "Open a new workspace for a client, series or campaign.",
-    icon: FolderPlus,
-    to: "/projects",
-    primary: true,
-    later: true,
-};
-
-const actions: Action[] = [
+  to: To;
+}[] = [
   {
     title: "New AI chat",
     body: "Think out loud with an assistant that knows your voice.",
     icon: MessagesSquare,
     to: "/chat",
-    later: true,
   },
   {
     title: "Generate script",
     body: "Go from a rough premise to a structured draft.",
     icon: FileText,
     to: "/script-studio",
-    later: true,
   },
   {
-    title: "Generate thumbnail",
+    title: "Create image",
+    body: "Brand-consistent visuals from a prompt or reference.",
+    icon: Wand2,
+    to: "/image-studio",
+  },
+  {
+    title: "Create thumbnail",
     body: "Compose a frame that earns the click.",
     icon: ImageIcon,
     to: "/thumbnail-studio",
-    later: true,
+  },
+  {
+    title: "Upload file",
+    body: "Bring footage, briefs and references into the workspace.",
+    icon: Upload,
+    to: "/files",
   },
 ];
 
+const stats = [
+  { label: "Projects", value: "0", note: "none yet" },
+  { label: "Generations", value: "0", note: "this cycle" },
+  { label: "Scheduled", value: "0", note: "next 30 days" },
+  { label: "Files", value: "0", note: "in the drive" },
+];
+
 function DashboardPage() {
+  const usedPct = Math.round(
+    (creditSummary.used / creditSummary.allowance) * 100,
+  );
+
   return (
     <div className="space-y-14">
       <section className="relative">
-        <p className="label-eyebrow">Tuesday · 21:04 · Studio plan</p>
+        <p className="label-eyebrow">Tuesday · 21:04 · {creditSummary.plan} plan</p>
         <h1 className="mt-4 text-display max-w-3xl text-foreground">
           Good evening, Alex.
         </h1>
@@ -105,10 +121,10 @@ function DashboardPage() {
 
       <section>
         <SectionLabel aside={<PhaseBadge />}>Quick actions</SectionLabel>
-        <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
+        <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
           <Link
-            to={primaryAction.to}
-            className="group relative flex min-h-[220px] flex-col justify-between overflow-hidden rounded-2xl border border-border bg-surface p-7 transition-colors duration-200 hover:border-accent-brand/40 hover:bg-surface-2"
+            to="/projects"
+            className="group relative flex min-h-[240px] flex-col justify-between overflow-hidden rounded-2xl border border-border bg-surface p-7 transition-colors duration-200 hover:border-accent-brand/40 hover:bg-surface-2"
           >
             <span
               aria-hidden
@@ -130,18 +146,18 @@ function DashboardPage() {
                 scripts, assets and schedule in one place.
               </span>
               <span className="mt-5 inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">
-                Coming in a later phase
+                Open projects
                 <ArrowUpRight className="size-3 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
               </span>
             </span>
           </Link>
 
-          <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1 lg:gap-3">
-            {actions.map((a) => (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+            {quickActions.map((a) => (
               <Link
                 key={a.title}
                 to={a.to}
-                className="group flex items-start gap-4 rounded-xl border border-border bg-surface p-5 transition-colors duration-200 hover:border-accent-brand/40 hover:bg-surface-2"
+                className="group flex items-start gap-4 rounded-xl border border-border bg-surface p-4 transition-colors duration-200 hover:border-accent-brand/40 hover:bg-surface-2"
               >
                 <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-surface-2 text-text-muted transition-colors group-hover:text-accent-brand">
                   <a.icon className="size-4" />
@@ -156,6 +172,31 @@ function DashboardPage() {
                 </span>
               </Link>
             ))}
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <SectionLabel>Continue where you left off</SectionLabel>
+        <div className="rounded-2xl border border-dashed border-border p-7">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-4">
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-surface-2 text-text-muted">
+                <PlayCircle className="size-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[15px] font-medium text-foreground">
+                  Nothing in progress
+                </p>
+                <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-text-muted">
+                  Drafts, unfinished generations and open studio sessions will
+                  reappear here so you can pick up mid-thought.
+                </p>
+              </div>
+            </div>
+            <Button asChild variant="outline" size="sm" className="shrink-0">
+              <Link to="/script-studio">Start a draft</Link>
+            </Button>
           </div>
         </div>
       </section>
@@ -187,6 +228,33 @@ function DashboardPage() {
         </div>
 
         <div>
+          <SectionLabel
+            aside={
+              <Link
+                to="/ai-usage"
+                className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle transition-colors hover:text-accent-brand"
+              >
+                Usage
+              </Link>
+            }
+          >
+            Recent AI generations
+          </SectionLabel>
+          <EmptyState
+            icon={Sparkles}
+            title="No generations yet"
+            description="Scripts, images, thumbnails and chat replies you generate will be listed here with their credit cost."
+            action={
+              <Button asChild variant="outline" size="sm">
+                <Link to="/chat">Open AI chat</Link>
+              </Button>
+            }
+          />
+        </div>
+      </section>
+
+      <section className="grid gap-10 lg:grid-cols-[1.1fr_1fr]">
+        <div>
           <SectionLabel>Recent activity</SectionLabel>
           <EmptyState
             icon={History}
@@ -194,10 +262,68 @@ function DashboardPage() {
             description="Generations, edits and shares will appear here as a chronological trail of your work."
           />
         </div>
+
+        <div>
+          <SectionLabel
+            aside={
+              <StatusPill tone="accent">
+                <Zap className="size-3" />
+                {creditSummary.plan}
+              </StatusPill>
+            }
+          >
+            AI credits
+          </SectionLabel>
+          <div className="rounded-2xl border border-border bg-surface p-7">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <p className="font-mono text-[28px] leading-none text-foreground">
+                  {creditSummary.remaining.toLocaleString()}
+                </p>
+                <p className="mt-2 text-[13px] text-text-subtle">
+                  credits remaining of{" "}
+                  {creditSummary.allowance.toLocaleString()}
+                </p>
+              </div>
+              <p className="font-mono text-[11px] text-text-subtle">
+                {usedPct}% used
+              </p>
+            </div>
+            <Progress value={usedPct} className="mt-5 h-1.5" />
+            <p className="mt-4 text-[12px] text-text-subtle">
+              Renews on {creditSummary.renewsOn}.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link to="/ai-usage">Usage breakdown</Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/billing">Billing</Link>
+              </Button>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section>
-        <SectionLabel aside={<PhaseBadge />}>Upcoming</SectionLabel>
+        <SectionLabel aside={<PhaseBadge />}>Creator stats</SectionLabel>
+        <div className="grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+          {stats.map((s) => (
+            <div key={s.label} className="bg-surface p-6">
+              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">
+                {s.label}
+              </p>
+              <p className="mt-3 font-mono text-[26px] leading-none text-foreground">
+                {s.value}
+              </p>
+              <p className="mt-2 text-[12px] text-text-subtle">{s.note}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <SectionLabel aside={<PhaseBadge />}>Upcoming content</SectionLabel>
         <div className="flex flex-col gap-5 rounded-2xl border border-border bg-surface p-7 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-4">
             <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-surface-2 text-text-muted">
@@ -205,19 +331,24 @@ function DashboardPage() {
             </span>
             <div className="min-w-0">
               <p className="text-[15px] font-medium text-foreground">
-                Scheduling isn't live yet
+                Nothing scheduled
               </p>
               <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-text-muted">
                 Publishing dates, reminders and content deadlines will surface
-                here once the planner ships.
+                here once you plan your first piece.
               </p>
             </div>
           </div>
-          <Button asChild variant="ghost" size="sm" className="shrink-0">
-            <Link to="/upcoming">
-              Preview the surface <ArrowUpRight className="size-3.5" />
-            </Link>
-          </Button>
+          <div className="flex shrink-0 gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link to="/content-planner">Open planner</Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/upcoming">
+                Upcoming <ArrowUpRight className="size-3.5" />
+              </Link>
+            </Button>
+          </div>
         </div>
       </section>
 

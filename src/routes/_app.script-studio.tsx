@@ -82,7 +82,7 @@ const mockProjects = ["Q3 Growth Series", "Onboarding Rewrite", "Founder Story A
 
 type Section = { id: string; label: string; text: string };
 
-const initialSections: Record<string, Section[]> = {
+const initialSections: { a: Section[]; b: Section[]; c: Section[] } = {
   a: [
     { id: "hook", label: "Hook", text: "You're losing viewers in the first 8 seconds — here's the fix nobody talks about." },
     { id: "intro", label: "Intro", text: "Quick intro: who this is for, and the one promise we're making in this video." },
@@ -124,11 +124,11 @@ function ScriptStudioPage() {
   const [project, setProject] = useState<string>("none");
 
   const [topic, setTopic] = useState("");
-  const [contentType, setContentType] = useState(platform.contentTypes[0]);
-  const [duration, setDuration] = useState(platform.durations[0]);
+  const [contentType, setContentType] = useState<string>(platform.contentTypes[0] ?? "");
+  const [duration, setDuration] = useState<string>(platform.durations[0] ?? "");
   const [audience, setAudience] = useState("");
-  const [tone, setTone] = useState(tones[0]);
-  const [language, setLanguage] = useState(languages[0]);
+  const [tone, setTone] = useState<string>(tones[0] ?? "");
+  const [language, setLanguage] = useState<string>(languages[0] ?? "");
   const [creativity, setCreativity] = useState([55]);
   const [multiOption, setMultiOption] = useState(true);
 
@@ -142,8 +142,8 @@ function ScriptStudioPage() {
   const handlePlatformChange = (id: typeof platformId) => {
     setPlatformId(id);
     const next = platforms_lookup(id);
-    setContentType(next.contentTypes[0]);
-    setDuration(next.durations[0]);
+    setContentType(next.contentTypes[0] ?? "");
+    setDuration(next.durations[0] ?? "");
   };
 
   function platforms_lookup(id: string) {
@@ -188,7 +188,7 @@ function ScriptStudioPage() {
         description="Draft, structure and refine long-form scripts with an editor built for spoken words."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={project} onValueChange={setProject}>
+            <Select value={project} onValueChange={(v) => setProject(v)}>
               <SelectTrigger className="h-9 w-[180px] bg-surface-2 text-[13px]">
                 <SelectValue placeholder="No project" />
               </SelectTrigger>
@@ -349,14 +349,14 @@ function ScriptStudioPage() {
                     <OptionCard
                       key={key}
                       label={`Option ${key.toUpperCase()}`}
-                      title={initialSections[key][0].text}
+                      title={initialSections[key][0]?.text ?? ""}
                       recommended={i === 0}
                       selected={selectedOption === key}
                       onSelect={() => handleSelectOption(key)}
                       meta={`${platform.label} · ${duration}`}
                     >
                       <p className="mt-2 line-clamp-3 text-[12px] leading-relaxed text-text-muted">
-                        {initialSections[key][2].text}
+                        {initialSections[key][2]?.text}
                       </p>
                       {i === 0 ? (
                         <p className="mt-3 text-[11px] leading-relaxed text-accent-brand">

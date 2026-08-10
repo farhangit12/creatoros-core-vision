@@ -87,12 +87,12 @@ const mediaSuggestions = [
 
 function VideoStudioPage() {
   const { id: platformId, setId: setPlatformId, platform } = usePlatform("tiktok");
-  const [scriptChoice, setScriptChoice] = useState<string>(mockScripts[0]);
+  const [scriptChoice, setScriptChoice] = useState<string>(mockScripts[0] ?? "");
   const [pastedScript, setPastedScript] = useState("");
-  const [videoType, setVideoType] = useState(videoTypes[1]);
-  const [aspectRatio, setAspectRatio] = useState(platform.aspectRatios[0]);
-  const [duration, setDuration] = useState(platform.durations[0]);
-  const [visualStyle, setVisualStyle] = useState(visualStyles[0]);
+  const [videoType, setVideoType] = useState<string>(videoTypes[1] ?? "");
+  const [aspectRatio, setAspectRatio] = useState<string>(platform.aspectRatios[0] ?? "");
+  const [duration, setDuration] = useState<string>(platform.durations[0] ?? "");
+  const [visualStyle, setVisualStyle] = useState<string>(visualStyles[0] ?? "");
 
   const [voiceoverOn, setVoiceoverOn] = useState(true);
   const [captionsOn, setCaptionsOn] = useState(true);
@@ -101,10 +101,10 @@ function VideoStudioPage() {
   const [generating, setGenerating] = useState(false);
   const [hasBreakdown, setHasBreakdown] = useState(false);
   const [scenes, setScenes] = useState<Scene[]>(initialScenes);
-  const [selectedSceneId, setSelectedSceneId] = useState<string>(initialScenes[0].id);
+  const [selectedSceneId, setSelectedSceneId] = useState<string>(initialScenes[0]!.id);
 
-  const [voice, setVoice] = useState(voices[0]);
-  const [musicTrack, setMusicTrack] = useState(musicTracks[0]);
+  const [voice, setVoice] = useState<string>(voices[0] ?? "");
+  const [musicTrack, setMusicTrack] = useState<string>(musicTracks[0] ?? "");
   const [volume, setVolume] = useState([60]);
 
   const [playing, setPlaying] = useState(false);
@@ -127,7 +127,9 @@ function VideoStudioPage() {
       const next = [...prev];
       const target = index + dir;
       if (target < 0 || target >= next.length) return prev;
-      [next[index], next[target]] = [next[target], next[index]];
+      const tmp = next[index]!;
+      next[index] = next[target]!;
+      next[target] = tmp;
       return next;
     });
   };
@@ -136,7 +138,7 @@ function VideoStudioPage() {
     setScenes((prev) => prev.map((s) => (s.id === id ? { ...s, caption } : s)));
   };
 
-  const selectedScene = scenes.find((s) => s.id === selectedSceneId) ?? scenes[0];
+  const selectedScene: Scene = scenes.find((s) => s.id === selectedSceneId) ?? scenes[0]!;
   const totalDuration = useMemo(() => scenes.reduce((sum, s) => sum + s.duration, 0), [scenes]);
 
   const handleRender = () => {
