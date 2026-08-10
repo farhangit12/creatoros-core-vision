@@ -1,8 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { Gauge, TrendingUp, Zap } from "lucide-react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
+import { AlertTriangle, Gauge, TrendingUp, Zap } from "lucide-react";
 import { PageHeader, SectionLabel } from "@/components/app/primitives";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { creditSummary, models } from "@/lib/creator-data";
 
 export const Route = createFileRoute("/_app/ai-usage")({
   head: () => ({
@@ -30,20 +32,51 @@ const categories = [
   { label: "Transcription", value: 190, tone: "muted" },
 ];
 
-const history = [
-  { day: "Mon", value: 42 },
-  { day: "Tue", value: 68 },
-  { day: "Wed", value: 31 },
-  { day: "Thu", value: 88 },
-  { day: "Fri", value: 74 },
-  { day: "Sat", value: 22 },
-  { day: "Sun", value: 55 },
+const historyByRange = {
+  Today: [
+    { day: "6a", value: 10 },
+    { day: "9a", value: 35 },
+    { day: "12p", value: 60 },
+    { day: "3p", value: 80 },
+    { day: "6p", value: 45 },
+    { day: "9p", value: 25 },
+  ],
+  Week: [
+    { day: "Mon", value: 42 },
+    { day: "Tue", value: 68 },
+    { day: "Wed", value: 31 },
+    { day: "Thu", value: 88 },
+    { day: "Fri", value: 74 },
+    { day: "Sat", value: 22 },
+    { day: "Sun", value: 55 },
+  ],
+  Month: [
+    { day: "W1", value: 58 },
+    { day: "W2", value: 72 },
+    { day: "W3", value: 64 },
+    { day: "W4", value: 90 },
+  ],
+};
+
+const generations = [
+  { feature: "Script generation", model: "CreatorOS Precise", credits: 9, at: "Today · 17:40" },
+  { feature: "Thumbnail concept", model: "CreatorOS Balanced", credits: 4, at: "Today · 14:12" },
+  { feature: "Chat ideation", model: "CreatorOS Fast", credits: 1, at: "Yesterday · 20:03" },
+  { feature: "Caption pass", model: "CreatorOS Fast", credits: 1, at: "Yesterday · 11:47" },
+  { feature: "Transcription cleanup", model: "CreatorOS Balanced", credits: 4, at: "2 days ago · 09:15" },
 ];
 
+const ranges = ["Today", "Week", "Month"] as const;
+
 function AiUsagePage() {
-  const used = 2520;
-  const total = 5000;
+  const [range, setRange] = useState<(typeof ranges)[number]>("Week");
+  const [showLowWarning, setShowLowWarning] = useState(
+    creditSummary.remaining < creditSummary.lowThreshold,
+  );
+  const used = creditSummary.used;
+  const total = creditSummary.allowance;
   const pct = Math.round((used / total) * 100);
+  const history = historyByRange[range];
 
   return (
     <div className="space-y-12">
@@ -52,11 +85,43 @@ function AiUsagePage() {
         title="AI Usage & Credits"
         description="Understand how your workspace spends credits, and when they renew. Figures below are illustrative prototype data."
         actions={
-          <Button size="sm" variant="outline">
-            Manage plan
-          </Button>
+          <>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/billing">Billing</Link>
+            </Button>
+            <Button asChild size="sm">
+              <Link to="/billing">Upgrade plan</Link>
+            </Button>
+          </>
         }
       />
+
+      {showLowWarning ? (
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-warning/30 bg-warning/10 px-5 py-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+            <div>
+              <p className="text-[14px] text-foreground">Low credit balance</p>
+              <p className="mt-1 text-[13px] text-text-muted">
+                {creditSummary.remaining.toLocaleString()} credits remain, under the{" "}
+                {creditSummary.lowThreshold.toLocaleString()}-credit threshold. Consider
+                topping up before {creditSummary.renewsOn}.
+              </p>
+            </div>
+          </div>
+          <Button asChild size="sm" variant="outline">
+            <Link to="/billing">Top up</Link>
+          </Button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowLowWarning(true)}
+          className="text-[11px] text-text-subtle underline underline-offset-2 hover:text-foreground"
+        >
+          Preview low-credit warning
+        </button>
+      )}
 
       <section className="grid gap-px overflow-hidden rounded-2xl border border-border bg-border lg:grid-cols-[1.4fr_1fr_1fr]">
         <div className="bg-surface p-7">
@@ -65,7 +130,7 @@ function AiUsagePage() {
             <span className="label-eyebrow">Credit balance</span>
           </div>
           <p className="mt-5 font-mono text-[36px] leading-none tracking-[-0.03em] text-foreground">
-            {(total - used).toLocaleString()}
+            {creditSummary.remaining.toLocaleString()}
           </p>
           <p className="mt-2 text-[13px] text-text-muted">
             of {total.toLocaleString()} credits remaining
@@ -84,7 +149,7 @@ function AiUsagePage() {
             />
           </div>
           <p className="mt-3 font-mono text-[11px] text-text-subtle">
-            {pct}% used · renews 1 Sep
+            {pct}% used · renews {creditSummary.renewsOn}
           </p>
         </div>
 
@@ -104,13 +169,13 @@ function AiUsagePage() {
         <div className="bg-surface p-7">
           <span className="label-eyebrow">Plan</span>
           <p className="mt-5 text-[20px] font-medium tracking-[-0.02em] text-foreground">
-            Studio
+            {creditSummary.plan}
           </p>
           <p className="mt-2 text-[13px] text-text-muted">
-            5,000 credits / month
+            {total.toLocaleString()} credits / month
           </p>
-          <Button size="sm" className="mt-6 w-full">
-            Upgrade to Scale
+          <Button asChild size="sm" className="mt-6 w-full">
+            <Link to="/billing">Upgrade to Scale</Link>
           </Button>
         </div>
       </section>
@@ -119,9 +184,23 @@ function AiUsagePage() {
         <div>
           <SectionLabel
             aside={
-              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">
-                last 7 days
-              </span>
+              <div className="flex items-center gap-1 rounded-lg border border-border bg-surface-2 p-1">
+                {ranges.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setRange(r)}
+                    className={cn(
+                      "h-6 rounded-md px-2.5 font-mono text-[10px] uppercase tracking-[0.1em] transition-colors",
+                      range === r
+                        ? "bg-accent-tint text-foreground"
+                        : "text-text-subtle hover:text-foreground",
+                    )}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
             }
           >
             Usage history
@@ -147,7 +226,7 @@ function AiUsagePage() {
         </div>
 
         <div>
-          <SectionLabel>By category</SectionLabel>
+          <SectionLabel>By feature</SectionLabel>
           <ul className="divide-y divide-border-subtle rounded-xl border border-border bg-surface">
             {categories.map((c) => (
               <li
@@ -175,6 +254,54 @@ function AiUsagePage() {
       </section>
 
       <section>
+        <SectionLabel
+          aside={
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">
+              per-generation log
+            </span>
+          }
+        >
+          Generation history
+        </SectionLabel>
+        <div className="overflow-hidden rounded-xl border border-border bg-surface">
+          <table className="w-full text-left text-[13px]">
+            <thead>
+              <tr className="border-b border-border-subtle text-text-subtle">
+                <th className="px-5 py-3 font-normal">Feature</th>
+                <th className="px-5 py-3 font-normal">Model</th>
+                <th className="px-5 py-3 font-normal">Credits</th>
+                <th className="px-5 py-3 font-normal">Timestamp</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-subtle">
+              {generations.map((g, i) => (
+                <tr key={i}>
+                  <td className="px-5 py-3 text-foreground">{g.feature}</td>
+                  <td className="px-5 py-3 text-text-muted">{g.model}</td>
+                  <td className="px-5 py-3 font-mono text-foreground">{g.credits}</td>
+                  <td className="px-5 py-3 font-mono text-[11px] text-text-subtle">
+                    {g.at}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <SectionLabel>Estimated cost per generation</SectionLabel>
+        <ul className="grid gap-4 md:grid-cols-3">
+          {models.map((m) => (
+            <li key={m.id} className="rounded-xl border border-border bg-surface p-5">
+              <p className="text-[14px] text-foreground">{m.label}</p>
+              <p className="mt-2 font-mono text-[12px] text-text-subtle">{m.note}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section>
         <SectionLabel>Balance states</SectionLabel>
         <div className="grid gap-4 md:grid-cols-3">
           {[
@@ -186,7 +313,7 @@ function AiUsagePage() {
             {
               label: "Low balance",
               tone: "warning",
-              copy: "Under 15% remaining — consider topping up.",
+              copy: "Under threshold remaining — consider topping up.",
             },
             {
               label: "Exhausted",

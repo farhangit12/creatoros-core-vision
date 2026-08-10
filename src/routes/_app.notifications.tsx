@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   AlertTriangle,
@@ -7,6 +7,7 @@ import {
   Info,
   MoreHorizontal,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { PageHeader } from "@/components/app/primitives";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/_app/notifications")({
   head: () => ({
@@ -39,6 +51,24 @@ export const Route = createFileRoute("/_app/notifications")({
 });
 
 type Kind = "success" | "warning" | "info" | "system";
+type Category =
+  | "System"
+  | "AI generation"
+  | "Credits"
+  | "Publishing"
+  | "Project updates";
+
+type Item = {
+  id: number;
+  kind: Kind;
+  category: Category;
+  title: string;
+  body: string;
+  time: string;
+  day: "Today" | "Yesterday" | "Earlier";
+  unread: boolean;
+  action?: { label: string; to: string };
+};
 
 const icons: Record<Kind, typeof Info> = {
   success: CheckCircle2,
@@ -54,70 +84,121 @@ const tones: Record<Kind, string> = {
   system: "text-text-muted",
 };
 
-const groups = [
+const initialItems: Item[] = [
   {
+    id: 1,
+    kind: "system",
+    category: "System",
+    title: "Welcome to the CreatorOS prototype",
+    body: "Modules marked “later phase” are visual destinations only.",
+    time: "21:02",
     day: "Today",
-    items: [
-      {
-        id: 1,
-        kind: "system" as Kind,
-        title: "Welcome to the CreatorOS prototype",
-        body: "Modules marked “later phase” are visual destinations only.",
-        time: "21:02",
-        unread: true,
-      },
-      {
-        id: 2,
-        kind: "info" as Kind,
-        title: "Credit cycle renews in 9 days",
-        body: "2,480 credits remain on the Studio plan.",
-        time: "17:40",
-        unread: true,
-      },
-      {
-        id: 3,
-        kind: "warning" as Kind,
-        title: "Two drafts have no assigned project",
-        body: "Assign them once Projects ships to keep the workspace tidy.",
-        time: "11:15",
-        unread: true,
-      },
-    ],
+    unread: true,
   },
   {
+    id: 2,
+    kind: "info",
+    category: "Credits",
+    title: "Credit cycle renews in 9 days",
+    body: "2,480 credits remain on the Studio plan.",
+    time: "17:40",
+    day: "Today",
+    unread: true,
+    action: { label: "Top up credits", to: "/billing" },
+  },
+  {
+    id: 3,
+    kind: "warning",
+    category: "Project updates",
+    title: "Two drafts have no assigned project",
+    body: "Assign them once Projects ships to keep the workspace tidy.",
+    time: "11:15",
+    day: "Today",
+    unread: true,
+    action: { label: "Open script", to: "/scripts" },
+  },
+  {
+    id: 4,
+    kind: "success",
+    category: "AI generation",
+    title: "Script generation finished",
+    body: "Your long-form outline for “Studio setup” is ready to review.",
+    time: "10:02",
+    day: "Today",
+    unread: false,
+    action: { label: "Open script", to: "/scripts" },
+  },
+  {
+    id: 5,
+    kind: "success",
+    category: "System",
+    title: "Workspace preferences saved",
+    body: "Appearance and notification defaults were updated.",
+    time: "19:22",
     day: "Yesterday",
-    items: [
-      {
-        id: 4,
-        kind: "success" as Kind,
-        title: "Workspace preferences saved",
-        body: "Appearance and notification defaults were updated.",
-        time: "19:22",
-        unread: false,
-      },
-    ],
+    unread: false,
+  },
+  {
+    id: 6,
+    kind: "info",
+    category: "Publishing",
+    title: "Post scheduled for YouTube",
+    body: "“Weekly recap #12” is queued for tomorrow at 09:00.",
+    time: "14:08",
+    day: "Yesterday",
+    unread: false,
+  },
+  {
+    id: 7,
+    kind: "info",
+    category: "Credits",
+    title: "Credit top-up applied",
+    body: "500 bonus credits were added to your balance.",
+    time: "09:44",
+    day: "Earlier",
+    unread: false,
   },
 ];
 
-const filters = ["All", "Unread", "System", "Alerts"] as const;
+const filters = [
+  "All",
+  "Unread",
+  "System",
+  "AI generation",
+  "Credits",
+  "Publishing",
+  "Project updates",
+] as const;
+
+const dayOrder = ["Today", "Yesterday", "Earlier"] as const;
 
 function NotificationsPage() {
+  const [items, setItems] = useState<Item[]>(initialItems);
   const [filter, setFilter] = useState<(typeof filters)[number]>("All");
-  const [readAll, setReadAll] = useState(false);
-  const unread = readAll
-    ? 0
-    : groups.flatMap((g) => g.items).filter((i) => i.unread).length;
 
-  const visible = groups
-    .map((g) => ({
-      ...g,
-      items: g.items.filter((i) => {
-        if (filter === "Unread") return i.unread && !readAll;
-        if (filter === "System") return i.kind === "system";
-        if (filter === "Alerts") return i.kind === "warning";
-        return true;
-      }),
-    }))
+  const unreadCount = items.filter((i) => i.unread).length;
+
+  const markAllRead = () =>
+    setItems((prev) => prev.map((i) => ({ ...i, unread: false })));
+
+  const clearAll = () => setItems([]);
+
+  const toggleRead = (id: number) =>
+    setItems((prev) =>
+      prev.map((i) => (i.id === id ? { ...i, unread: !i.unread } : i)),
+    );
+
+  const remove = (id: number) =>
+    setItems((prev) => prev.filter((i) => i.id !== id));
+
+  const filtered = items.filter((i) => {
+    if (filter === "All") return true;
+    if (filter === "Unread") return i.unread;
+    return i.category === filter;
+  });
+
+  const groups = dayOrder
+    .map((day) => ({ day, items: filtered.filter((i) => i.day === day) }))
     .filter((g) => g.items.length > 0);
 
   return (
@@ -125,16 +206,37 @@ function NotificationsPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Notifications"
-        description={`${unread} unread · prototype notifications shown for interface reference.`}
+        description={`${unreadCount} unread · prototype notifications shown for interface reference.`}
         actions={
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setReadAll(true)}
-            disabled={unread === 0}
-          >
-            Mark all read
-          </Button>
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={markAllRead}
+              disabled={unreadCount === 0}
+            >
+              Mark all read
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="outline" disabled={items.length === 0}>
+                  Clear all
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear all notifications?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This removes every notification from this list. It can't be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={clearAll}>Clear all</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
         }
       />
 
@@ -150,7 +252,7 @@ function NotificationsPage() {
             aria-selected={filter === f}
             onClick={() => setFilter(f)}
             className={cn(
-              "relative h-9 rounded-t-md px-3 text-[13px] transition-colors duration-150",
+              "relative h-9 whitespace-nowrap rounded-t-md px-3 text-[13px] transition-colors duration-150",
               filter === f
                 ? "text-foreground"
                 : "text-text-subtle hover:text-foreground",
@@ -164,27 +266,30 @@ function NotificationsPage() {
         ))}
       </div>
 
-      {visible.length === 0 ? (
+      {groups.length === 0 ? (
         <EmptyState
           icon={BellOff}
-          title="You're all caught up"
+          title={
+            filter === "All"
+              ? "You're all caught up"
+              : `No notifications in “${filter}”`
+          }
           description="New activity across your workspace will land here, grouped by day."
         />
       ) : (
         <div className="space-y-10">
-          {visible.map((g) => (
+          {groups.map((g) => (
             <section key={g.day}>
               <h2 className="label-eyebrow mb-4">{g.day}</h2>
               <ul className="divide-y divide-border-subtle overflow-hidden rounded-xl border border-border bg-surface">
                 {g.items.map((n) => {
                   const Icon = icons[n.kind];
-                  const isUnread = n.unread && !readAll;
                   return (
                     <li
                       key={n.id}
                       className={cn(
                         "group flex items-start gap-4 px-5 py-4 transition-colors duration-150 hover:bg-surface-2",
-                        isUnread && "bg-accent-tint/40",
+                        n.unread && "bg-accent-tint/40",
                       )}
                     >
                       <Icon
@@ -195,13 +300,18 @@ function NotificationsPage() {
                           <p className="truncate text-[14px] text-foreground">
                             {n.title}
                           </p>
-                          {isUnread ? (
+                          {n.unread ? (
                             <span className="size-1.5 shrink-0 rounded-full bg-accent-brand" />
                           ) : null}
                         </div>
                         <p className="mt-1 text-[13px] leading-relaxed text-text-muted">
                           {n.body}
                         </p>
+                        {n.action ? (
+                          <Button asChild size="sm" variant="outline" className="mt-3">
+                            <Link to={n.action.to}>{n.action.label}</Link>
+                          </Button>
+                        ) : null}
                       </div>
                       <span className="shrink-0 font-mono text-[11px] text-text-subtle">
                         {n.time}
@@ -213,10 +323,16 @@ function NotificationsPage() {
                         >
                           <MoreHorizontal className="size-4" />
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
-                          <DropdownMenuItem>Mark as read</DropdownMenuItem>
-                          <DropdownMenuItem>Mute this type</DropdownMenuItem>
-                          <DropdownMenuItem>Dismiss</DropdownMenuItem>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem onSelect={() => toggleRead(n.id)}>
+                            {n.unread ? "Mark as read" : "Mark as unread"}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => remove(n.id)}
+                            variant="destructive"
+                          >
+                            <Trash2 className="size-4" /> Delete
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </li>

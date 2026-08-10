@@ -93,6 +93,26 @@ export function CommandPalette({
             <ArrowRight />
             <span>Start a new AI chat</span>
           </CommandItem>
+          <CommandItem value="generate script" onSelect={() => go("/script-studio")}>
+            <ArrowRight />
+            <span>Generate a script</span>
+          </CommandItem>
+          <CommandItem value="create thumbnail" onSelect={() => go("/thumbnail-studio")}>
+            <ArrowRight />
+            <span>Create a thumbnail</span>
+          </CommandItem>
+          <CommandItem value="create image" onSelect={() => go("/image-studio")}>
+            <ArrowRight />
+            <span>Create an image</span>
+          </CommandItem>
+          <CommandItem value="upload file" onSelect={() => go("/files")}>
+            <Plus />
+            <span>Upload a file</span>
+          </CommandItem>
+          <CommandItem value="repurpose content" onSelect={() => go("/repurpose")}>
+            <ArrowRight />
+            <span>Repurpose existing content</span>
+          </CommandItem>
         </CommandGroup>
 
         {navigation.map((group) => (

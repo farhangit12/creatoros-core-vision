@@ -121,6 +121,9 @@ export function Topbar({
           <DropdownMenuItem asChild>
             <Link to="/ai-usage">AI usage & credits</Link>
           </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to="/billing">Billing</Link>
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
             <Link to="/login" className="text-danger focus:text-danger">
