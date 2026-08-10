@@ -17,6 +17,11 @@ import {
   CalendarClock,
   UserRound,
   Settings,
+  Repeat2,
+  BookOpen,
+  Palette,
+  Brain,
+  CreditCard,
   type LucideIcon,
 } from "lucide-react";
 
@@ -87,6 +92,14 @@ export const navigation: NavGroup[] = [
         description:
           "Generate and iterate on brand-consistent imagery and assets.",
       },
+      {
+        label: "Repurpose",
+        to: "/repurpose",
+        icon: Repeat2,
+        status: "later",
+        description:
+          "Adapt one piece of content into platform-native versions.",
+      },
     ],
   },
   {
@@ -120,6 +133,27 @@ export const navigation: NavGroup[] = [
         icon: LayoutTemplate,
         status: "later",
         description: "Reusable starting points for scripts, posts and visuals.",
+      },
+      {
+        label: "Knowledge Base",
+        to: "/knowledge-base",
+        icon: BookOpen,
+        status: "later",
+        description: "Documents, notes and research the AI can draw on.",
+      },
+      {
+        label: "Brand Kit",
+        to: "/brand-kit",
+        icon: Palette,
+        status: "later",
+        description: "Logo, colours, fonts and voice that define your brand.",
+      },
+      {
+        label: "AI Memory",
+        to: "/ai-memory",
+        icon: Brain,
+        status: "later",
+        description: "What the AI should remember about you and your audience.",
       },
     ],
   },
@@ -185,6 +219,13 @@ export const navigation: NavGroup[] = [
         icon: Settings,
         status: "live",
         description: "Workspace preferences and security.",
+      },
+      {
+        label: "Billing",
+        to: "/billing",
+        icon: CreditCard,
+        status: "later",
+        description: "Plan, credit allowance, payment method and invoices.",
       },
     ],
   },
