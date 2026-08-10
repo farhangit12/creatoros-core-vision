@@ -332,7 +332,7 @@ export function ProjectsPage() {
                   <div className="space-y-2">
                     <Label className="text-[12px] text-text-muted">Cover pattern</Label>
                     <Select value={newPattern} onValueChange={setNewPattern}>
-                      <SelectTrigger size="sm">
+                      <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -357,7 +357,7 @@ export function ProjectsPage() {
                   <div className="space-y-2">
                     <Label className="text-[12px] text-text-muted">Template</Label>
                     <Select value={newTemplate} onValueChange={setNewTemplate}>
-                      <SelectTrigger size="sm">
+                      <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -393,7 +393,7 @@ export function ProjectsPage() {
           />
         </div>
         <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
-          <SelectTrigger size="sm" className="w-[180px]">
+          <SelectTrigger className="w-[180px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -560,7 +560,7 @@ function ProjectActionsMenu({
           <Archive className="size-3.5" /> {archived ? "Unarchive" : "Archive"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onClick={onDelete}>
+        <DropdownMenuItem className="text-danger focus:text-danger" onClick={onDelete}>
           <Trash2 className="size-3.5" /> Delete
         </DropdownMenuItem>
       </DropdownMenuContent>

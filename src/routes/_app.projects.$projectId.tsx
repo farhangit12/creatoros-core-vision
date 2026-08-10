@@ -142,7 +142,7 @@ function ItemRow({
           </DropdownMenuItem>
           <DropdownMenuItem>Use as reference</DropdownMenuItem>
           <DropdownMenuItem>Duplicate</DropdownMenuItem>
-          <DropdownMenuItem variant="destructive">
+          <DropdownMenuItem className="text-danger focus:text-danger">
             <Trash2 className="size-3.5" /> Remove
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -288,7 +288,7 @@ export function ProjectDetailPage() {
                         <DropdownMenuItem>Open</DropdownMenuItem>
                         <DropdownMenuItem>Use as reference</DropdownMenuItem>
                         <DropdownMenuItem>Duplicate</DropdownMenuItem>
-                        <DropdownMenuItem variant="destructive">Remove</DropdownMenuItem>
+                        <DropdownMenuItem className="text-danger focus:text-danger">Remove</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -363,7 +363,7 @@ export function ProjectDetailPage() {
             <div className="space-y-2">
               <Label className="text-[12px] text-text-muted">Visibility</Label>
               <Select value={visibility} onValueChange={setVisibility}>
-                <SelectTrigger size="sm" className="w-48">
+                <SelectTrigger className="w-48">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
