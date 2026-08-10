@@ -37,6 +37,7 @@ import { Route as AppTemplatesRouteImport } from './routes/_app.templates'
 import { Route as AppThumbnailStudioRouteImport } from './routes/_app.thumbnail-studio'
 import { Route as AppUpcomingRouteImport } from './routes/_app.upcoming'
 import { Route as AppVideoStudioRouteImport } from './routes/_app.video-studio'
+import { Route as AppProjectsProjectIdRouteImport } from './routes/_app.projects.$projectId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -177,6 +178,11 @@ const AppVideoStudioRoute = AppVideoStudioRouteImport.update({
   path: '/video-studio',
   getParentRoute: () => AppRoute,
 } as any)
+const AppProjectsProjectIdRoute = AppProjectsProjectIdRouteImport.update({
+  id: '/$projectId',
+  path: '/$projectId',
+  getParentRoute: () => AppProjectsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -198,7 +204,7 @@ export interface FileRoutesByFullPath {
   '/knowledge-base': typeof AppKnowledgeBaseRoute
   '/notifications': typeof AppNotificationsRoute
   '/profile': typeof AppProfileRoute
-  '/projects': typeof AppProjectsRoute
+  '/projects': typeof AppProjectsRouteWithChildren
   '/repurpose': typeof AppRepurposeRoute
   '/script-studio': typeof AppScriptStudioRoute
   '/settings': typeof AppSettingsRoute
@@ -206,6 +212,7 @@ export interface FileRoutesByFullPath {
   '/thumbnail-studio': typeof AppThumbnailStudioRoute
   '/upcoming': typeof AppUpcomingRoute
   '/video-studio': typeof AppVideoStudioRoute
+  '/projects/$projectId': typeof AppProjectsProjectIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -227,7 +234,7 @@ export interface FileRoutesByTo {
   '/knowledge-base': typeof AppKnowledgeBaseRoute
   '/notifications': typeof AppNotificationsRoute
   '/profile': typeof AppProfileRoute
-  '/projects': typeof AppProjectsRoute
+  '/projects': typeof AppProjectsRouteWithChildren
   '/repurpose': typeof AppRepurposeRoute
   '/script-studio': typeof AppScriptStudioRoute
   '/settings': typeof AppSettingsRoute
@@ -235,6 +242,7 @@ export interface FileRoutesByTo {
   '/thumbnail-studio': typeof AppThumbnailStudioRoute
   '/upcoming': typeof AppUpcomingRoute
   '/video-studio': typeof AppVideoStudioRoute
+  '/projects/$projectId': typeof AppProjectsProjectIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -258,7 +266,7 @@ export interface FileRoutesById {
   '/_app/knowledge-base': typeof AppKnowledgeBaseRoute
   '/_app/notifications': typeof AppNotificationsRoute
   '/_app/profile': typeof AppProfileRoute
-  '/_app/projects': typeof AppProjectsRoute
+  '/_app/projects': typeof AppProjectsRouteWithChildren
   '/_app/repurpose': typeof AppRepurposeRoute
   '/_app/script-studio': typeof AppScriptStudioRoute
   '/_app/settings': typeof AppSettingsRoute
@@ -266,6 +274,7 @@ export interface FileRoutesById {
   '/_app/thumbnail-studio': typeof AppThumbnailStudioRoute
   '/_app/upcoming': typeof AppUpcomingRoute
   '/_app/video-studio': typeof AppVideoStudioRoute
+  '/_app/projects/$projectId': typeof AppProjectsProjectIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -297,6 +306,7 @@ export interface FileRouteTypes {
     | '/thumbnail-studio'
     | '/upcoming'
     | '/video-studio'
+    | '/projects/$projectId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -326,6 +336,7 @@ export interface FileRouteTypes {
     | '/thumbnail-studio'
     | '/upcoming'
     | '/video-studio'
+    | '/projects/$projectId'
   id:
     | '__root__'
     | '/'
@@ -356,6 +367,7 @@ export interface FileRouteTypes {
     | '/_app/thumbnail-studio'
     | '/_app/upcoming'
     | '/_app/video-studio'
+    | '/_app/projects/$projectId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -565,8 +577,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppVideoStudioRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/projects/$projectId': {
+      id: '/_app/projects/$projectId'
+      path: '/$projectId'
+      fullPath: '/projects/$projectId'
+      preLoaderRoute: typeof AppProjectsProjectIdRouteImport
+      parentRoute: typeof AppProjectsRoute
+    }
   }
 }
+
+interface AppProjectsRouteChildren {
+  AppProjectsProjectIdRoute: typeof AppProjectsProjectIdRoute
+}
+
+const AppProjectsRouteChildren: AppProjectsRouteChildren = {
+  AppProjectsProjectIdRoute: AppProjectsProjectIdRoute,
+}
+
+const AppProjectsRouteWithChildren = AppProjectsRoute._addFileChildren(
+  AppProjectsRouteChildren,
+)
 
 interface AppRouteChildren {
   AppAiMemoryRoute: typeof AppAiMemoryRoute
@@ -583,7 +614,7 @@ interface AppRouteChildren {
   AppKnowledgeBaseRoute: typeof AppKnowledgeBaseRoute
   AppNotificationsRoute: typeof AppNotificationsRoute
   AppProfileRoute: typeof AppProfileRoute
-  AppProjectsRoute: typeof AppProjectsRoute
+  AppProjectsRoute: typeof AppProjectsRouteWithChildren
   AppRepurposeRoute: typeof AppRepurposeRoute
   AppScriptStudioRoute: typeof AppScriptStudioRoute
   AppSettingsRoute: typeof AppSettingsRoute
@@ -608,7 +639,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppKnowledgeBaseRoute: AppKnowledgeBaseRoute,
   AppNotificationsRoute: AppNotificationsRoute,
   AppProfileRoute: AppProfileRoute,
-  AppProjectsRoute: AppProjectsRoute,
+  AppProjectsRoute: AppProjectsRouteWithChildren,
   AppRepurposeRoute: AppRepurposeRoute,
   AppScriptStudioRoute: AppScriptStudioRoute,
   AppSettingsRoute: AppSettingsRoute,
