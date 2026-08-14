@@ -304,7 +304,7 @@ export function FilesPage() {
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search files…" className="pl-9" />
         </div>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger size="sm" className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -316,7 +316,7 @@ export function FilesPage() {
           </SelectContent>
         </Select>
         <Select value={sort} onValueChange={setSort}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger size="sm" className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -531,7 +531,7 @@ function FileMenu({
           <AddToProjectIcon className="size-3.5" /> Add to Project
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onDelete}>
+        <DropdownMenuItem variant="destructive" onClick={onDelete}>
           <Trash2 className="size-3.5" /> Delete
         </DropdownMenuItem>
       </DropdownMenuContent>

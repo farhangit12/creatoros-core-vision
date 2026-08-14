@@ -166,7 +166,7 @@ function QuickCreateDialog({
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [platform, setPlatform] = useState<PlatformId>("youtube");
-  const [project, setProject] = useState(projects[0]!);
+  const [project, setProject] = useState(projects[0]);
   const [stage, setStage] = useState<Stage>("Idea");
   const [day, setDay] = useState(10);
 
