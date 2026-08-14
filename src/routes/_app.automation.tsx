@@ -225,7 +225,7 @@ function AutomationPage() {
                 </TableHeader>
                 <TableBody>
                   {historyRuns.map((r) => {
-                    const Icon = statusIcon[r.status];
+                    const Icon = statusIcon[r.status]!;
                     return (
                       <TableRow key={r.id}>
                         <TableCell className="text-text-subtle">{r.time}</TableCell>
@@ -291,9 +291,9 @@ function WorkflowCanvas({ onClose }: { onClose: () => void }) {
   const [enabled, setEnabled] = useState(true);
   const [selected, setSelected] = useState<NodeKind>("trigger");
   const [testState, setTestState] = useState<"idle" | "running" | "success">("idle");
-  const [triggerType, setTriggerType] = useState(triggerTypes[0]);
-  const [aiAction, setAiAction] = useState(aiActions[0]);
-  const [output, setOutput] = useState(outputDestinations[0]);
+  const [triggerType, setTriggerType] = useState(triggerTypes[0]!);
+  const [aiAction, setAiAction] = useState(aiActions[0]!);
+  const [output, setOutput] = useState(outputDestinations[0]!);
 
   const nodes: { kind: NodeKind; label: string; icon: typeof Zap; summary: string }[] = [
     { kind: "trigger", label: "Trigger", icon: Zap, summary: triggerType },

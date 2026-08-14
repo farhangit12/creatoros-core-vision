@@ -182,10 +182,10 @@ export function ProjectsPage() {
 
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [newCover, setNewCover] = useState(coverColors[0].id);
-  const [newPattern, setNewPattern] = useState(coverPatterns[0]);
+  const [newCover, setNewCover] = useState(coverColors[0]!.id);
+  const [newPattern, setNewPattern] = useState(coverPatterns[0]!);
   const [newTags, setNewTags] = useState("");
-  const [newTemplate, setNewTemplate] = useState(templates[0]);
+  const [newTemplate, setNewTemplate] = useState(templates[0]!);
 
   const active = projects.filter((p) => !p.archived);
   const archived = projects.filter((p) => p.archived);
@@ -244,7 +244,7 @@ export function ProjectsPage() {
       toast.error("Give the project a name first");
       return;
     }
-    const cover = coverColors.find((c) => c.id === newCover)?.className ?? coverColors[0].className;
+    const cover = coverColors.find((c) => c.id === newCover)?.className ?? coverColors[0]!.className;
     const created: Project = {
       id: `project-${Date.now()}`,
       name: newName.trim(),
@@ -265,9 +265,9 @@ export function ProjectsPage() {
     setNewName("");
     setNewDescription("");
     setNewTags("");
-    setNewCover(coverColors[0].id);
-    setNewPattern(coverPatterns[0]);
-    setNewTemplate(templates[0]);
+    setNewCover(coverColors[0]!.id);
+    setNewPattern(coverPatterns[0]!);
+    setNewTemplate(templates[0]!);
     toast.success("Project created", { description: `${created.name} · ${newPattern} cover` });
   }
 
