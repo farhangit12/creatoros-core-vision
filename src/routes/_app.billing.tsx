@@ -62,52 +62,77 @@ const plans = [
     id: "free",
     name: "Free",
     monthly: 0,
-    yearly: 0,
-    credits: 250,
-    features: ["250 credits / month", "1 seat", "Community support"],
-  },
-  {
-    id: "creator",
-    name: "Creator",
-    monthly: 29,
-    yearly: 24,
-    credits: 1500,
-    features: ["1,500 credits / month", "3 seats", "Priority queue"],
-  },
-  {
-    id: "studio",
-    name: "Studio",
-    monthly: 79,
-    yearly: 65,
-    credits: creditSummary.allowance,
+    credits: 150,
+    tagline: "Low-risk product discovery.",
+    cta: "Start Free",
     features: [
-      `${creditSummary.allowance.toLocaleString()} credits / month`,
-      "10 seats",
-      "Advanced models",
-      "Priority support",
+      "150 CreatorOS credits / month",
+      "AI Chat",
+      "Script Studio",
+      "Basic Image generation",
+      "Basic Thumbnail generation",
+      "Limited Projects",
+      "Content Planner",
+      "Basic usage visibility",
+      "Standard generation priority",
+    ],
+  },
+  {
+    id: "pro",
+    name: "Pro",
+    monthly: 29,
+    credits: 2000,
+    recommended: true,
+    tagline: "Primary individual creator plan.",
+    cta: "Upgrade to Pro",
+    features: [
+      "2,000 CreatorOS credits / month",
+      "AI Chat",
+      "Full Script Studio",
+      "Image Studio",
+      "Thumbnail Studio",
+      "Unlimited Projects",
+      "Content Planner",
+      "Higher generation limits",
+      "Faster generation priority",
+      "Advanced AI controls where supported",
     ],
   },
   {
     id: "scale",
     name: "Scale",
-    monthly: 199,
-    yearly: 165,
-    credits: 15000,
+    monthly: 79,
+    credits: 8000,
+    tagline: "High-volume creators / creator businesses.",
+    cta: "Upgrade to Scale",
     features: [
-      "15,000 credits / month",
-      "Unlimited seats",
-      "Dedicated support",
-      "Custom model routing",
+      "8,000 CreatorOS credits / month",
+      "Everything in Pro",
+      "Higher generation limits",
+      "Priority generation queue",
+      "Higher image-generation allowance",
+      "Higher project/storage allowance",
+      "Advanced usage visibility",
+      "Early access to new capabilities",
     ],
   },
 ];
 
+const comparisonRows = [
+  { feature: "Monthly Credits", free: "150 credits", pro: "2,000 credits", scale: "8,000 credits" },
+  { feature: "AI Creation", free: "Chat, Script, Basic Visuals", pro: "Full Script, Image & Thumbnail Studios", scale: "Full Studios + Priority Output" },
+  { feature: "Projects", free: "Limited (3 active)", pro: "Unlimited", scale: "Unlimited" },
+  { feature: "Content Planner", free: "Standard Calendar", pro: "Standard Calendar", scale: "Standard + Extended Queue" },
+  { feature: "Generation Priority", free: "Standard", pro: "Faster priority", scale: "Priority queue" },
+  { feature: "Usage Limits", free: "Discovery cap", pro: "Higher creator limits", scale: "Maximum throughput" },
+];
+
 const invoices = [
-  { id: "INV-2091", date: "12 Aug 2025", amount: "$79.00", status: "Paid" as const },
-  { id: "INV-2054", date: "12 Jul 2025", amount: "$79.00", status: "Paid" as const },
-  { id: "INV-2011", date: "12 Jun 2025", amount: "$79.00", status: "Paid" as const },
-  { id: "INV-1978", date: "12 May 2025", amount: "$79.00", status: "Failed" as const },
-  { id: "INV-1932", date: "12 Apr 2025", amount: "$79.00", status: "Paid" as const },
+  { id: "INV-2091", date: "12 Aug 2026", amount: "$29.00", status: "Paid" as const },
+  { id: "INV-2054", date: "12 Jul 2026", amount: "$29.00", status: "Paid" as const },
+  { id: "INV-2011", date: "12 Jun 2026", amount: "$29.00", status: "Paid" as const },
+  { id: "INV-1978", date: "12 May 2026", amount: "$29.00", status: "Failed" as const },
+  { id: "INV-1932", date: "12 Apr 2026", amount: "$29.00", status: "Paid" as const },
 ];
 
 const statusTone = {
@@ -116,7 +141,6 @@ const statusTone = {
 } as const;
 
 function BillingPage() {
-  const [cycle, setCycle] = useState<"monthly" | "yearly">("monthly");
   const [checkout, setCheckout] = useState<CheckoutState>("idle");
   const [targetPlan, setTargetPlan] = useState<string | null>(null);
   const [updatePaymentOpen, setUpdatePaymentOpen] = useState(false);
@@ -135,8 +159,8 @@ function BillingPage() {
     <div className="space-y-12">
       <PageHeader
         eyebrow="Account"
-        title="Billing"
-        description="Manage your plan, payment method and invoice history. All figures are illustrative prototype data."
+        title="Billing & Plans"
+        description="Manage your plan, CreatorOS credits allowance and invoice history. All figures are illustrative prototype data."
       />
 
       <section>
@@ -148,7 +172,7 @@ function BillingPage() {
                 {creditSummary.plan} plan
               </p>
               <p className="mt-1 text-[13px] text-text-muted">
-                {creditSummary.allowance.toLocaleString()} credits / month · renews{" "}
+                {creditSummary.allowance.toLocaleString()} CreatorOS credits / month · renews{" "}
                 {creditSummary.renewsOn}
               </p>
             </div>
@@ -169,66 +193,50 @@ function BillingPage() {
           <p className="mt-3 font-mono text-[11px] text-text-subtle">
             {creditSummary.used.toLocaleString()} used of{" "}
             {creditSummary.allowance.toLocaleString()} · {creditSummary.remaining.toLocaleString()}{" "}
-            remaining
+            credits remaining
           </p>
         </div>
       </section>
 
       <section>
-        <SectionLabel
-          aside={
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 p-1">
-              <button
-                type="button"
-                onClick={() => setCycle("monthly")}
-                className={cn(
-                  "h-7 rounded-md px-3 text-[12px] transition-colors",
-                  cycle === "monthly"
-                    ? "bg-accent-tint text-foreground"
-                    : "text-text-subtle hover:text-foreground",
-                )}
-              >
-                Monthly
-              </button>
-              <button
-                type="button"
-                onClick={() => setCycle("yearly")}
-                className={cn(
-                  "flex h-7 items-center gap-1.5 rounded-md px-3 text-[12px] transition-colors",
-                  cycle === "yearly"
-                    ? "bg-accent-tint text-foreground"
-                    : "text-text-subtle hover:text-foreground",
-                )}
-              >
-                Yearly
-                <StatusPill tone="success">Save ~18%</StatusPill>
-              </button>
-            </div>
-          }
-        >
-          Plans
-        </SectionLabel>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SectionLabel>Plans</SectionLabel>
+        <div className="grid gap-5 lg:grid-cols-3">
           {plans.map((p) => {
-            const isCurrent = p.id === "studio";
-            const price = cycle === "monthly" ? p.monthly : p.yearly;
+            const isCurrent = p.id === "pro";
             return (
               <div
                 key={p.id}
                 className={cn(
-                  "flex flex-col rounded-xl border bg-surface p-5",
-                  isCurrent ? "border-accent-brand/50" : "border-border",
+                  "relative flex flex-col rounded-2xl border bg-surface p-6 transition-colors duration-200",
+                  p.recommended
+                    ? "border-accent-brand/60 bg-surface shadow-floating ring-1 ring-accent-brand/30"
+                    : "border-border",
                 )}
               >
+                {p.recommended ? (
+                  <span className="absolute -top-3 left-6 inline-flex items-center rounded-full bg-accent-brand px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-primary-foreground shadow-sm">
+                    Recommended
+                  </span>
+                ) : null}
+
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[15px] font-medium text-foreground">{p.name}</p>
+                  <p className="text-[17px] font-medium text-foreground">{p.name}</p>
                   {isCurrent ? <StatusPill tone="accent">Current plan</StatusPill> : null}
                 </div>
-                <p className="mt-4 font-mono text-[26px] tracking-[-0.02em] text-foreground">
-                  ${price}
-                  <span className="text-[13px] font-normal text-text-subtle">/mo</span>
-                </p>
-                <ul className="mt-4 flex-1 space-y-2">
+
+                <p className="mt-1 text-[13px] text-text-muted">{p.tagline}</p>
+
+                <div className="mt-5 border-y border-border-subtle py-4">
+                  <p className="font-mono text-[30px] leading-none tracking-[-0.03em] text-foreground">
+                    ${p.monthly}
+                    <span className="text-[13px] font-normal text-text-subtle">/month</span>
+                  </p>
+                  <p className="mt-2 font-mono text-[11px] text-accent-brand">
+                    {p.credits.toLocaleString()} CreatorOS credits
+                  </p>
+                </div>
+
+                <ul className="mt-5 flex-1 space-y-2.5">
                   {p.features.map((f) => (
                     <li
                       key={f}
@@ -239,7 +247,8 @@ function BillingPage() {
                     </li>
                   ))}
                 </ul>
-                <div className="mt-5">
+
+                <div className="mt-6 pt-2">
                   {isCurrent ? (
                     <Button size="sm" variant="outline" className="w-full" disabled>
                       Current plan
@@ -251,17 +260,47 @@ function BillingPage() {
                       className="w-full"
                       onClick={() => startUpgrade(p.id)}
                     >
-                      Downgrade
+                      {p.cta}
                     </Button>
                   ) : (
-                    <Button size="sm" className="w-full" onClick={() => startUpgrade(p.id)}>
-                      Upgrade
+                    <Button
+                      size="sm"
+                      className={cn("w-full", p.recommended && "bg-accent-brand hover:bg-accent-hover")}
+                      onClick={() => startUpgrade(p.id)}
+                    >
+                      {p.cta}
                     </Button>
                   )}
                 </div>
               </div>
             );
           })}
+        </div>
+      </section>
+
+      <section>
+        <SectionLabel>Plan comparison</SectionLabel>
+        <div className="overflow-hidden rounded-xl border border-border bg-surface">
+          <table className="w-full text-left text-[13px]">
+            <thead>
+              <tr className="border-b border-border-subtle text-text-subtle">
+                <th className="px-5 py-3.5 font-normal">Feature</th>
+                <th className="px-5 py-3.5 font-normal">Free</th>
+                <th className="bg-accent-tint/30 px-5 py-3.5 font-medium text-foreground">Pro</th>
+                <th className="px-5 py-3.5 font-normal">Scale</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-subtle">
+              {comparisonRows.map((row) => (
+                <tr key={row.feature}>
+                  <td className="px-5 py-3.5 font-medium text-foreground">{row.feature}</td>
+                  <td className="px-5 py-3.5 text-text-muted">{row.free}</td>
+                  <td className="bg-accent-tint/30 px-5 py-3.5 text-foreground">{row.pro}</td>
+                  <td className="px-5 py-3.5 text-text-muted">{row.scale}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -338,7 +377,7 @@ function BillingPage() {
               <AlertDialogHeader>
                 <AlertDialogTitle>Cancel your subscription?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This ends your Studio plan at the end of the billing cycle on{" "}
+                  This ends your Pro plan at the end of the billing cycle on{" "}
                   {creditSummary.renewsOn}. You can resubscribe at any time.
                 </AlertDialogDescription>
               </AlertDialogHeader>

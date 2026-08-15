@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { AlertTriangle, Gauge, TrendingUp, Zap } from "lucide-react";
+import { AlertTriangle, Zap } from "lucide-react";
 import { PageHeader, SectionLabel } from "@/components/app/primitives";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -123,7 +123,7 @@ function AiUsagePage() {
         </button>
       )}
 
-      <section className="grid gap-px overflow-hidden rounded-2xl border border-border bg-border lg:grid-cols-[1.4fr_1fr_1fr]">
+      <section className="grid gap-px overflow-hidden rounded-2xl border border-border bg-border lg:grid-cols-[1.5fr_1fr]">
         <div className="bg-surface p-7">
           <div className="flex items-center gap-2 text-text-subtle">
             <Zap className="size-4 text-accent-brand" />
@@ -153,27 +153,16 @@ function AiUsagePage() {
           </p>
         </div>
 
-        <div className="bg-surface p-7">
-          <span className="label-eyebrow">This cycle</span>
-          <p className="mt-5 font-mono text-[28px] leading-none tracking-[-0.02em] text-foreground">
-            {used.toLocaleString()}
-          </p>
-          <p className="mt-2 flex items-center gap-1.5 text-[13px] text-success">
-            <TrendingUp className="size-3.5" /> 12% vs last cycle
-          </p>
-          <p className="mt-6 text-[13px] leading-relaxed text-text-subtle">
-            Average of 84 credits per active day.
-          </p>
-        </div>
-
-        <div className="bg-surface p-7">
-          <span className="label-eyebrow">Plan</span>
-          <p className="mt-5 text-[20px] font-medium tracking-[-0.02em] text-foreground">
-            {creditSummary.plan}
-          </p>
-          <p className="mt-2 text-[13px] text-text-muted">
-            {total.toLocaleString()} credits / month
-          </p>
+        <div className="flex flex-col justify-between bg-surface p-7">
+          <div>
+            <span className="label-eyebrow">Plan</span>
+            <p className="mt-5 text-[20px] font-medium tracking-[-0.02em] text-foreground">
+              {creditSummary.plan} plan
+            </p>
+            <p className="mt-2 text-[13px] text-text-muted">
+              {total.toLocaleString()} credits / month
+            </p>
+          </div>
           <Button asChild size="sm" className="mt-6 w-full">
             <Link to="/billing">Upgrade to Scale</Link>
           </Button>
@@ -299,49 +288,6 @@ function AiUsagePage() {
             </li>
           ))}
         </ul>
-      </section>
-
-      <section>
-        <SectionLabel>Balance states</SectionLabel>
-        <div className="grid gap-4 md:grid-cols-3">
-          {[
-            {
-              label: "Healthy",
-              tone: "success",
-              copy: "Plenty of credits for the rest of the cycle.",
-            },
-            {
-              label: "Low balance",
-              tone: "warning",
-              copy: "Under threshold remaining — consider topping up.",
-            },
-            {
-              label: "Exhausted",
-              tone: "danger",
-              copy: "Generation is paused until renewal or upgrade.",
-            },
-          ].map((s) => (
-            <div
-              key={s.label}
-              className="rounded-xl border border-border bg-surface p-5"
-            >
-              <span
-                className={cn(
-                  "inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em]",
-                  s.tone === "success" && "text-success",
-                  s.tone === "warning" && "text-warning",
-                  s.tone === "danger" && "text-danger",
-                )}
-              >
-                <Gauge className="size-3.5" />
-                {s.label}
-              </span>
-              <p className="mt-3 text-[13px] leading-relaxed text-text-muted">
-                {s.copy}
-              </p>
-            </div>
-          ))}
-        </div>
       </section>
     </div>
   );

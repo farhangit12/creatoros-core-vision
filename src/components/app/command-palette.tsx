@@ -109,10 +109,6 @@ export function CommandPalette({
             <Plus />
             <span>Upload a file</span>
           </CommandItem>
-          <CommandItem value="repurpose content" onSelect={() => go("/repurpose")}>
-            <ArrowRight />
-            <span>Repurpose existing content</span>
-          </CommandItem>
         </CommandGroup>
 
         {navigation.map((group) => (

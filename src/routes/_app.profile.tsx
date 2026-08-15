@@ -96,7 +96,7 @@ function ProfilePage() {
             Alex Rivera
           </p>
           <p className="mt-1 text-[13px] text-text-muted">
-            alex@creatoros.ai · Studio plan · Joined March 2026
+            alex@creatoros.ai · Pro plan · Joined March 2026
           </p>
         </div>
         <Button variant="outline" size="sm" disabled={!editing}>

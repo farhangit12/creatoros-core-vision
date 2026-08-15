@@ -98,12 +98,12 @@ export const platforms: Platform[] = [
 ];
 
 export const creditSummary = {
-  plan: "Studio",
-  allowance: 5000,
-  used: 2520,
-  remaining: 2480,
+  plan: "Pro",
+  allowance: 2000,
+  used: 820,
+  remaining: 1180,
   renewsOn: "12 September",
-  lowThreshold: 750,
+  lowThreshold: 400,
 };
 
 export const tones = [

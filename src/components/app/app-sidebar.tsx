@@ -176,7 +176,7 @@ export function SidebarNav({
                 Alex Rivera
               </span>
               <span className="block truncate text-[11px] text-text-subtle">
-                Studio plan
+                Pro plan
               </span>
             </span>
           )}

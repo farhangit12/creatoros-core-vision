@@ -9,7 +9,6 @@ import {
   MessagesSquare,
   Sparkles,
   FolderKanban,
-  CalendarClock,
   Upload,
   Wand2,
   PlayCircle,
@@ -319,36 +318,6 @@ function DashboardPage() {
               <p className="mt-2 text-[12px] text-text-subtle">{s.note}</p>
             </div>
           ))}
-        </div>
-      </section>
-
-      <section>
-        <SectionLabel aside={<PhaseBadge />}>Upcoming content</SectionLabel>
-        <div className="flex flex-col gap-5 rounded-2xl border border-border bg-surface p-7 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-start gap-4">
-            <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-surface-2 text-text-muted">
-              <CalendarClock className="size-4" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[15px] font-medium text-foreground">
-                Nothing scheduled
-              </p>
-              <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-text-muted">
-                Publishing dates, reminders and content deadlines will surface
-                here once you plan your first piece.
-              </p>
-            </div>
-          </div>
-          <div className="flex shrink-0 gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link to="/content-planner">Open planner</Link>
-            </Button>
-            <Button asChild variant="ghost" size="sm">
-              <Link to="/upcoming">
-                Upcoming <ArrowUpRight className="size-3.5" />
-              </Link>
-            </Button>
-          </div>
         </div>
       </section>
 

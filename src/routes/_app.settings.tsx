@@ -148,18 +148,6 @@ function SettingsPage() {
                   </p>
                 </div>
               </div>
-              <div className="mt-6 border-t border-border-subtle">
-                <Row
-                  title="Reduce motion"
-                  description="Honours your system setting automatically."
-                  control={<Switch defaultChecked disabled />}
-                />
-                <Row
-                  title="Compact density"
-                  description="Tighter rows for dense information work."
-                  control={<Switch />}
-                />
-              </div>
             </div>
           ) : null}
 
@@ -167,18 +155,28 @@ function SettingsPage() {
             <>
               <Row
                 title="Product updates"
-                description="New modules and meaningful changes."
+                description="New features, improvements and meaningful releases."
+                control={<Switch defaultChecked />}
+              />
+              <Row
+                title="AI generation updates"
+                description="Alerts when background scripts, frames and batch generations complete."
                 control={<Switch defaultChecked />}
               />
               <Row
                 title="Credit warnings"
-                description="Alert me when the balance drops below 15%."
+                description="Alert me when CreatorOS credit balance drops below threshold."
                 control={<Switch defaultChecked />}
               />
               <Row
-                title="Weekly digest"
-                description="A Monday summary of workspace activity."
-                control={<Switch />}
+                title="Planner/scheduling reminders"
+                description="Upcoming publishing dates and content deadlines."
+                control={<Switch defaultChecked />}
+              />
+              <Row
+                title="Security/account alerts"
+                description="Important security notices and session updates."
+                control={<Switch defaultChecked disabled />}
               />
             </>
           ) : null}
