@@ -1,12 +1,13 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Check, Eye, EyeOff, Loader2 } from "lucide-react";
+import { AlertCircle, Check, Eye, EyeOff, Loader2 } from "lucide-react";
 import { AuthLayout } from "@/components/auth/auth-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import { authClient } from "@/lib/auth-client";
 
 export const Route = createFileRoute("/signup")({
   head: () => ({
@@ -39,13 +40,38 @@ function strengthOf(pw: string) {
 const labels = ["Too weak", "Weak", "Fair", "Strong", "Excellent"];
 
 function SignupPage() {
+  const navigate = useNavigate();
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [agreed, setAgreed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const score = strengthOf(password);
   const mismatch = confirm.length > 0 && confirm !== password;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!name || !email || !password || mismatch || !agreed) {
+      setError("Fill in every field and confirm a matching password to continue.");
+      return;
+    }
+    setLoading(true);
+    const { error: signUpError } = await authClient.signUp.email({
+      name,
+      email,
+      password,
+    });
+    setLoading(false);
+    if (signUpError) {
+      setError(signUpError.message ?? "Couldn't create your account. Try again.");
+      return;
+    }
+    navigate({ to: "/dashboard" });
+  };
 
   return (
     <AuthLayout
@@ -60,18 +86,26 @@ function SignupPage() {
         </>
       }
     >
-      <form
-        className="space-y-5"
-        noValidate
-        onSubmit={(e) => {
-          e.preventDefault();
-          setLoading(true);
-          window.setTimeout(() => setLoading(false), 900);
-        }}
-      >
+      <form className="space-y-5" noValidate onSubmit={submit}>
+        {error ? (
+          <div
+            role="alert"
+            className="flex gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 text-[13px] leading-relaxed text-foreground"
+          >
+            <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
+            <span>{error}</span>
+          </div>
+        ) : null}
+
         <div className="space-y-2">
           <Label htmlFor="name">Full name</Label>
-          <Input id="name" className="h-10" placeholder="Alex Rivera" />
+          <Input
+            id="name"
+            className="h-10"
+            placeholder="Alex Rivera"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
         </div>
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
@@ -80,6 +114,8 @@ function SignupPage() {
             type="email"
             className="h-10"
             placeholder="you@studio.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
           />
         </div>
         <div className="space-y-2">

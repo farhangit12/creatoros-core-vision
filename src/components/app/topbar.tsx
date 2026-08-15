@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Bell, Menu, Search, Zap } from "lucide-react";
 import { findNavItem } from "@/lib/navigation";
 import { creditSummary } from "@/lib/creator-data";
 import { cn } from "@/lib/utils";
+import { authClient } from "@/lib/auth-client";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,6 +53,12 @@ export function Topbar({
   const [unreadCount, setUnreadCount] = useState(3);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const current = findNavItem(pathname);
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await authClient.signOut();
+    navigate({ to: "/login" });
+  };
 
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-md sm:px-6">
@@ -211,10 +218,11 @@ export function Topbar({
             <Link to="/settings">Settings</Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <Link to="/login" className="text-danger focus:text-danger">
-              Sign out
-            </Link>
+          <DropdownMenuItem
+            onSelect={handleSignOut}
+            className="text-danger focus:text-danger"
+          >
+            Sign out
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

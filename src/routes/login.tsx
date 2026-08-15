@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
 import { AuthLayout } from "@/components/auth/auth-layout";
@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { authClient } from "@/lib/auth-client";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -27,6 +28,7 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
+  const navigate = useNavigate();
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
@@ -34,7 +36,7 @@ function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const emailInvalid = email.length > 0 && !email.includes("@");
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (emailInvalid || !email || !password) {
@@ -42,12 +44,16 @@ function LoginPage() {
       return;
     }
     setLoading(true);
-    window.setTimeout(() => {
-      setLoading(false);
-      setError(
-        "Authentication is not connected in this prototype. Use the sidebar to explore the app.",
-      );
-    }, 900);
+    const { error: signInError } = await authClient.signIn.email({
+      email,
+      password,
+    });
+    setLoading(false);
+    if (signInError) {
+      setError(signInError.message ?? "Couldn't sign in. Check your credentials and try again.");
+      return;
+    }
+    navigate({ to: "/dashboard" });
   };
 
   return (
@@ -137,14 +143,6 @@ function LoginPage() {
           ) : (
             "Sign in"
           )}
-        </Button>
-
-        <Button
-          asChild
-          variant="outline"
-          className="h-10 w-full border-border bg-transparent"
-        >
-          <Link to="/dashboard">Continue to prototype workspace</Link>
         </Button>
       </form>
     </AuthLayout>
