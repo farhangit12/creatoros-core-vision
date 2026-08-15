@@ -1,5 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { LinkProps } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { formatDistanceToNow } from "date-fns";
 import {
   ArrowUpRight,
   FileText,
@@ -19,10 +22,11 @@ import {
   PhaseBadge,
   SectionLabel,
 } from "@/components/app/primitives";
-import { StatusPill } from "@/components/app/studio-kit";
+import { StatusPill, WireLine, type StateTone } from "@/components/app/studio-kit";
 import { creditSummary } from "@/lib/creator-data";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { getDashboardSummary } from "@/lib/server/dashboard";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({
@@ -83,17 +87,31 @@ const quickActions: {
   },
 ];
 
-const stats = [
-  { label: "Projects", value: "0", note: "none yet" },
-  { label: "Generations", value: "0", note: "this cycle" },
-  { label: "Scheduled", value: "0", note: "next 30 days" },
-  { label: "Files", value: "0", note: "in the drive" },
-];
+const statusTone: Record<string, StateTone> = {
+  Idea: "neutral",
+  "In progress": "accent",
+  Review: "warning",
+  Published: "success",
+  Archived: "neutral",
+};
 
 function DashboardPage() {
+  const getDashboardSummaryFn = useServerFn(getDashboardSummary);
+  const { data: summary, isLoading } = useQuery({
+    queryKey: ["dashboard-summary"],
+    queryFn: () => getDashboardSummaryFn(),
+  });
+
   const usedPct = Math.round(
     (creditSummary.used / creditSummary.allowance) * 100,
   );
+
+  const stats = [
+    { label: "Projects", value: isLoading ? "…" : String(summary?.projectsCount ?? 0), note: "total" },
+    { label: "Generations", value: "0", note: "this cycle" },
+    { label: "Scheduled", value: isLoading ? "…" : String(summary?.scheduledCount ?? 0), note: "next 30 days" },
+    { label: "Files", value: "0", note: "in the drive" },
+  ];
 
   return (
     <div className="space-y-14">
@@ -214,16 +232,43 @@ function DashboardPage() {
           >
             Recent projects
           </SectionLabel>
-          <EmptyState
-            icon={FolderKanban}
-            title="No projects yet"
-            description="Projects group everything you make — briefs, scripts, assets and schedule — into one surface."
-            action={
-              <Button asChild variant="outline" size="sm">
-                <Link to="/projects">Create your first project</Link>
-              </Button>
-            }
-          />
+          {isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 3 }, (_, i) => (
+                <WireLine key={i} className="h-14 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : summary && summary.recentProjects.length > 0 ? (
+            <div className="divide-y divide-border-subtle overflow-hidden rounded-xl border border-border">
+              {summary.recentProjects.map((p) => (
+                <Link
+                  key={p.id}
+                  to="/projects/$projectId"
+                  params={{ projectId: p.id }}
+                  className="flex items-center justify-between gap-4 bg-surface px-4 py-3 transition-colors duration-150 hover:bg-surface-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-medium text-foreground">{p.name}</p>
+                    <p className="font-mono text-[11px] text-text-subtle">
+                      Updated {formatDistanceToNow(p.updatedAt, { addSuffix: true })}
+                    </p>
+                  </div>
+                  <StatusPill tone={statusTone[p.status] ?? "neutral"}>{p.status}</StatusPill>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={FolderKanban}
+              title="No projects yet"
+              description="Projects group everything you make — briefs, scripts, assets and schedule — into one surface."
+              action={
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/projects">Create your first project</Link>
+                </Button>
+              }
+            />
+          )}
         </div>
 
         <div>

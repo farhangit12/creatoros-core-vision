@@ -1,6 +1,10 @@
-import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
 import {
+  AlertTriangle,
   CalendarRange,
   ChevronLeft,
   ChevronRight,
@@ -9,7 +13,7 @@ import {
   CalendarX2,
 } from "lucide-react";
 import { PageHeader, SectionLabel, EmptyState } from "@/components/app/primitives";
-import { StatusPill } from "@/components/app/studio-kit";
+import { StatusPill, WireLine } from "@/components/app/studio-kit";
 import { platforms, pipelineStages, type PlatformId } from "@/lib/creator-data";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -19,7 +23,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,6 +40,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { listProjects } from "@/lib/server/projects";
+import {
+  createPlannerItem,
+  deletePlannerItem,
+  listPlannerItems,
+  updatePlannerItem,
+  type PlannerItemRecord,
+} from "@/lib/server/planner";
 
 export const Route = createFileRoute("/_app/content-planner")({
   head: () => ({
@@ -60,34 +71,8 @@ export const Route = createFileRoute("/_app/content-planner")({
 
 type Stage = (typeof pipelineStages)[number];
 
-type ContentCard = {
-  id: string;
-  title: string;
-  platform: PlatformId;
-  project: string;
-  stage: Stage;
-  day: number; // day of month, 1-35 grid index
-};
-
-const projects = ["Launch Sprint", "Weekly Series", "Client: Acota", "Personal Brand"];
-
 const monthLabel = "March 2025";
 const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-function seedCards(): ContentCard[] {
-  return [
-    { id: "c1", title: "Studio tour walkthrough", platform: "youtube", project: "Weekly Series", stage: "Scheduled", day: 3 },
-    { id: "c2", title: "Behind the edit — reel", platform: "instagram", project: "Personal Brand", stage: "Draft", day: 5 },
-    { id: "c3", title: "5 tools I use daily", platform: "tiktok", project: "Weekly Series", stage: "Idea", day: 5 },
-    { id: "c4", title: "Q1 recap carousel", platform: "linkedin", project: "Client: Acota", stage: "Review", day: 9 },
-    { id: "c5", title: "Launch teaser thread", platform: "x", project: "Launch Sprint", stage: "Ready", day: 12 },
-    { id: "c6", title: "Product walkthrough short", platform: "youtube", project: "Launch Sprint", stage: "Scheduled", day: 14 },
-    { id: "c7", title: "Founder AMA clip", platform: "instagram", project: "Personal Brand", stage: "Published", day: 18 },
-    { id: "c8", title: "Client testimonial post", platform: "linkedin", project: "Client: Acota", stage: "Draft", day: 21 },
-    { id: "c9", title: "Trend remix #4", platform: "tiktok", project: "Weekly Series", stage: "Idea", day: 24 },
-    { id: "c10", title: "Newsletter cross-post", platform: "x", project: "Launch Sprint", stage: "Ready", day: 27 },
-];
-}
 
 const stageTone: Record<Stage, "neutral" | "accent" | "success" | "warning"> = {
   Idea: "neutral",
@@ -98,90 +83,70 @@ const stageTone: Record<Stage, "neutral" | "accent" | "success" | "warning"> = {
   Published: "success",
 };
 
+/** No date picker exists yet — the grid only captures a day-of-month, so we anchor
+ * it to the current month/year to keep the "scheduled" dashboard stat meaningful. */
+function scheduledDateForDay(day: number) {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), day);
+}
+
 function PlatformIcon({ id, className }: { id: PlatformId; className?: string }) {
   const p = platforms.find((pl) => pl.id === id)!;
   return <p.icon className={cn("size-3.5 text-text-subtle", className)} />;
 }
 
-function CardActionsMenu({ card }: { card: ContentCard }) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          onClick={(e) => e.stopPropagation()}
-          className="grid size-5 shrink-0 place-items-center rounded text-text-subtle hover:text-foreground"
-        >
-          <MoreHorizontal className="size-3.5" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-        <DropdownMenuItem>Create</DropdownMenuItem>
-        <DropdownMenuItem>Edit</DropdownMenuItem>
-        <DropdownMenuItem>Duplicate</DropdownMenuItem>
-        <DropdownMenuItem>Reschedule</DropdownMenuItem>
-        <DropdownMenuItem>Mark complete</DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem>Open content</DropdownMenuItem>
-        <DropdownMenuItem>Open project ({card.project})</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
+type FormValues = {
+  title: string;
+  platform: PlatformId;
+  projectId: string | null;
+  stage: Stage;
+  day: number;
+};
 
-function MiniCard({
-  card,
-  onDragStart,
+const NO_PROJECT_VALUE = "none";
+
+function ContentItemDialog({
+  open,
+  onOpenChange,
+  initial,
+  projectOptions,
+  onSubmit,
+  submitting,
 }: {
-  card: ContentCard;
-  onDragStart: (e: React.DragEvent, id: string) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  initial?: FormValues | undefined;
+  projectOptions: { id: string; name: string }[];
+  onSubmit: (values: FormValues) => void;
+  submitting: boolean;
 }) {
+  const [title, setTitle] = useState(initial?.title ?? "");
+  const [platform, setPlatform] = useState<PlatformId>(initial?.platform ?? "youtube");
+  const [projectId, setProjectId] = useState<string>(initial?.projectId ?? NO_PROJECT_VALUE);
+  const [stage, setStage] = useState<Stage>(initial?.stage ?? "Idea");
+  const [day, setDay] = useState(initial?.day ?? 10);
+
+  const isEdit = Boolean(initial);
+
+  function reset() {
+    setTitle(initial?.title ?? "");
+    setPlatform(initial?.platform ?? "youtube");
+    setProjectId(initial?.projectId ?? NO_PROJECT_VALUE);
+    setStage(initial?.stage ?? "Idea");
+    setDay(initial?.day ?? 10);
+  }
+
   return (
-    <div
-      draggable
-      onDragStart={(e) => onDragStart(e, card.id)}
-      className="group flex cursor-grab flex-col gap-1 rounded-md border border-border-subtle bg-surface-2 px-2 py-1.5 text-left active:cursor-grabbing"
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) reset();
+        onOpenChange(next);
+      }}
     >
-      <div className="flex items-center justify-between gap-1">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <PlatformIcon id={card.platform} />
-          <span className="truncate text-[11px] text-foreground">{card.title}</span>
-        </div>
-        <CardActionsMenu card={card} />
-      </div>
-      <StatusPill tone={stageTone[card.stage]} className="w-fit">
-        {card.stage}
-      </StatusPill>
-    </div>
-  );
-}
-
-function QuickCreateDialog({
-  onCreate,
-  trigger,
-}: {
-  onCreate: (card: Omit<ContentCard, "id">) => void;
-  trigger?: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [platform, setPlatform] = useState<PlatformId>("youtube");
-  const [project, setProject] = useState(projects[0]);
-  const [stage, setStage] = useState<Stage>("Idea");
-  const [day, setDay] = useState(10);
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger ?? (
-          <Button size="sm" className="gap-1.5">
-            <Plus className="size-4" /> Quick create
-          </Button>
-        )}
-      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Quick create</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit content" : "Quick create"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-2">
@@ -202,11 +167,12 @@ function QuickCreateDialog({
             </div>
             <div className="space-y-2">
               <Label className="text-[12px] text-text-muted">Project</Label>
-              <Select value={project} onValueChange={setProject}>
+              <Select value={projectId} onValueChange={setProjectId}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {projects.map((p) => (
-                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  <SelectItem value={NO_PROJECT_VALUE}>No project</SelectItem>
+                  {projectOptions.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -237,16 +203,22 @@ function QuickCreateDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+            Cancel
+          </Button>
           <Button
-            disabled={!title.trim()}
-            onClick={() => {
-              onCreate({ title: title.trim(), platform, project, stage, day });
-              setTitle("");
-              setOpen(false);
-            }}
+            disabled={!title.trim() || submitting}
+            onClick={() =>
+              onSubmit({
+                title: title.trim(),
+                platform,
+                projectId: projectId === NO_PROJECT_VALUE ? null : projectId,
+                stage,
+                day,
+              })
+            }
           >
-            Create
+            {submitting ? "Saving…" : isEdit ? "Save changes" : "Create"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -254,18 +226,211 @@ function QuickCreateDialog({
   );
 }
 
+function CardActionsMenu({
+  card,
+  projectName,
+  onEdit,
+  onDuplicate,
+  onDelete,
+  onOpenProject,
+}: {
+  card: PlannerItemRecord;
+  projectName: string;
+  onEdit: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+  onOpenProject?: (() => void) | undefined;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => e.stopPropagation()}
+          className="grid size-5 shrink-0 place-items-center rounded text-text-subtle hover:text-foreground"
+        >
+          <MoreHorizontal className="size-3.5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenuItem onClick={onEdit}>Edit</DropdownMenuItem>
+        <DropdownMenuItem onClick={onDuplicate}>Duplicate</DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {onOpenProject ? (
+          <DropdownMenuItem onClick={onOpenProject}>Open project ({projectName})</DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem className="text-danger focus:text-danger" onClick={onDelete}>
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function MiniCard({
+  card,
+  projectName,
+  onDragStart,
+  onEdit,
+  onDuplicate,
+  onDelete,
+  onOpenProject,
+}: {
+  card: PlannerItemRecord;
+  projectName: string;
+  onDragStart: (e: React.DragEvent, id: string) => void;
+  onEdit: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+  onOpenProject?: (() => void) | undefined;
+}) {
+  return (
+    <div
+      draggable
+      onDragStart={(e) => onDragStart(e, card.id)}
+      className="group flex cursor-grab flex-col gap-1 rounded-md border border-border-subtle bg-surface-2 px-2 py-1.5 text-left active:cursor-grabbing"
+    >
+      <div className="flex items-center justify-between gap-1">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <PlatformIcon id={card.platform as PlatformId} />
+          <span className="truncate text-[11px] text-foreground">{card.title}</span>
+        </div>
+        <CardActionsMenu
+          card={card}
+          projectName={projectName}
+          onEdit={onEdit}
+          onDuplicate={onDuplicate}
+          onDelete={onDelete}
+          onOpenProject={onOpenProject}
+        />
+      </div>
+      <StatusPill tone={stageTone[card.stage as Stage]} className="w-fit">
+        {card.stage}
+      </StatusPill>
+    </div>
+  );
+}
+
+const PLANNER_QUERY_KEY = ["planner-items"] as const;
+const PROJECTS_QUERY_KEY = ["projects"] as const;
+
 function ContentPlannerPage() {
-  const [cards, setCards] = useState<ContentCard[]>(seedCards);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  const listPlannerItemsFn = useServerFn(listPlannerItems);
+  const listProjectsFn = useServerFn(listProjects);
+  const createItemFn = useServerFn(createPlannerItem);
+  const updateItemFn = useServerFn(updatePlannerItem);
+  const deleteItemFn = useServerFn(deletePlannerItem);
+
+  const {
+    data: cards = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({ queryKey: PLANNER_QUERY_KEY, queryFn: () => listPlannerItemsFn() });
+
+  const { data: projectOptions = [] } = useQuery({
+    queryKey: PROJECTS_QUERY_KEY,
+    queryFn: () => listProjectsFn(),
+  });
+
+  const projectsById = useMemo(() => new Map(projectOptions.map((p) => [p.id, p.name])), [projectOptions]);
+
+  function invalidatePlannerData() {
+    queryClient.invalidateQueries({ queryKey: PLANNER_QUERY_KEY });
+    queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+  }
+
+  const createMutation = useMutation({
+    mutationFn: (values: FormValues) =>
+      createItemFn({
+        data: {
+          title: values.title,
+          platform: values.platform,
+          projectId: values.projectId,
+          stage: values.stage,
+          day: values.day,
+          scheduledAt: scheduledDateForDay(values.day),
+        },
+      }),
+    onSuccess: () => {
+      invalidatePlannerData();
+      setDialogState(null);
+      toast.success("Content created");
+    },
+    onError: () => toast.error("Couldn't create content. Try again."),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (input: Parameters<typeof updateItemFn>[0]) => updateItemFn(input),
+    onSuccess: () => {
+      invalidatePlannerData();
+    },
+    onError: () => toast.error("Couldn't update content. Try again."),
+  });
+
+  const editMutation = useMutation({
+    mutationFn: (values: FormValues & { id: string }) =>
+      updateItemFn({
+        data: {
+          id: values.id,
+          title: values.title,
+          platform: values.platform,
+          projectId: values.projectId,
+          stage: values.stage,
+          day: values.day,
+          scheduledAt: scheduledDateForDay(values.day),
+        },
+      }),
+    onSuccess: () => {
+      invalidatePlannerData();
+      setDialogState(null);
+      toast.success("Content updated");
+    },
+    onError: () => toast.error("Couldn't update content. Try again."),
+  });
+
+  const duplicateMutation = useMutation({
+    mutationFn: (card: PlannerItemRecord) =>
+      createItemFn({
+        data: {
+          title: `${card.title} (copy)`,
+          platform: card.platform as PlatformId,
+          projectId: card.projectId,
+          stage: card.stage as Stage,
+          day: card.day,
+          scheduledAt: card.scheduledAt,
+        },
+      }),
+    onSuccess: () => {
+      invalidatePlannerData();
+      toast.success("Content duplicated");
+    },
+    onError: () => toast.error("Couldn't duplicate content. Try again."),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteItemFn({ data: { id } }),
+    onSuccess: () => {
+      invalidatePlannerData();
+      toast("Content deleted");
+    },
+    onError: () => toast.error("Couldn't delete content. Try again."),
+  });
+
   const [view, setView] = useState<"Month" | "Week" | "Day">("Month");
   const [platformFilter, setPlatformFilter] = useState<string>("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
+  const [dialogState, setDialogState] = useState<{ mode: "create" } | { mode: "edit"; card: PlannerItemRecord } | null>(null);
 
   const filtered = cards.filter(
     (c) =>
       (platformFilter === "all" || c.platform === platformFilter) &&
-      (projectFilter === "all" || c.project === projectFilter) &&
+      (projectFilter === "all" || c.projectId === projectFilter) &&
       (stageFilter === "all" || c.stage === stageFilter),
   );
 
@@ -279,7 +444,7 @@ function ContentPlannerPage() {
     e.preventDefault();
     const id = e.dataTransfer.getData("text/card-id");
     if (id) {
-      setCards((prev) => prev.map((c) => (c.id === id ? { ...c, day } : c)));
+      updateMutation.mutate({ data: { id, day, scheduledAt: scheduledDateForDay(day) } });
     }
     setDragOverDay(null);
   }
@@ -288,9 +453,42 @@ function ContentPlannerPage() {
     e.preventDefault();
     const id = e.dataTransfer.getData("text/card-id");
     if (id) {
-      setCards((prev) => prev.map((c) => (c.id === id ? { ...c, stage } : c)));
+      updateMutation.mutate({ data: { id, stage } });
     }
   }
+
+  function openEdit(card: PlannerItemRecord) {
+    setDialogState({ mode: "edit", card });
+  }
+
+  function renderCard(c: PlannerItemRecord) {
+    const projectName = c.projectId ? (projectsById.get(c.projectId) ?? "Unknown project") : "No project";
+    return (
+      <MiniCard
+        key={c.id}
+        card={c}
+        projectName={projectName}
+        onDragStart={handleDragStart}
+        onEdit={() => openEdit(c)}
+        onDuplicate={() => duplicateMutation.mutate(c)}
+        onDelete={() => deleteMutation.mutate(c.id)}
+        onOpenProject={
+          c.projectId ? () => navigate({ to: "/projects/$projectId", params: { projectId: c.projectId! } }) : undefined
+        }
+      />
+    );
+  }
+
+  const dialogInitial: FormValues | undefined =
+    dialogState?.mode === "edit"
+      ? {
+          title: dialogState.card.title,
+          platform: dialogState.card.platform as PlatformId,
+          projectId: dialogState.card.projectId,
+          stage: dialogState.card.stage as Stage,
+          day: dialogState.card.day,
+        }
+      : undefined;
 
   return (
     <div className="space-y-12">
@@ -298,7 +496,29 @@ function ContentPlannerPage() {
         eyebrow="Organize"
         title="Content Planner"
         description="Plan publishing across channels on a calendar and timeline that understands production time."
-        actions={<QuickCreateDialog onCreate={(c) => setCards((prev) => [...prev, { ...c, id: `c${Date.now()}` }])} />}
+        actions={
+          <Button size="sm" className="gap-1.5" onClick={() => setDialogState({ mode: "create" })}>
+            <Plus className="size-4" /> Quick create
+          </Button>
+        }
+      />
+
+      <ContentItemDialog
+        key={dialogState === null ? "closed" : dialogState.mode === "edit" ? dialogState.card.id : "create"}
+        open={dialogState !== null}
+        onOpenChange={(open) => {
+          if (!open) setDialogState(null);
+        }}
+        initial={dialogInitial}
+        projectOptions={projectOptions}
+        submitting={createMutation.isPending || editMutation.isPending}
+        onSubmit={(values) => {
+          if (dialogState?.mode === "edit") {
+            editMutation.mutate({ ...values, id: dialogState.card.id });
+          } else {
+            createMutation.mutate(values);
+          }
+        }}
       />
 
       <section className="space-y-5">
@@ -339,8 +559,8 @@ function ContentPlannerPage() {
             <SelectTrigger className="w-[170px]"><SelectValue placeholder="Project" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All projects</SelectItem>
-              {projects.map((p) => (
-                <SelectItem key={p} value={p}>{p}</SelectItem>
+              {projectOptions.map((p) => (
+                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -355,7 +575,24 @@ function ContentPlannerPage() {
           </Select>
         </div>
 
-        {hasFilters && filtered.length === 0 ? (
+        {isLoading ? (
+          <div className="grid grid-cols-7 gap-px overflow-hidden rounded-xl border border-border bg-border">
+            {Array.from({ length: 35 }, (_, i) => (
+              <WireLine key={i} className="min-h-[104px] rounded-none" />
+            ))}
+          </div>
+        ) : isError ? (
+          <EmptyState
+            icon={AlertTriangle}
+            title="Couldn't load the content planner"
+            description="Something went wrong reaching the server. Try again."
+            action={
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                Retry
+              </Button>
+            }
+          />
+        ) : hasFilters && filtered.length === 0 ? (
           <EmptyState
             icon={CalendarX2}
             title="No content matches these filters"
@@ -388,9 +625,7 @@ function ContentPlannerPage() {
                   {dayCards.length === 0 ? (
                     <p className="px-0.5 text-[10px] text-text-subtle/60">No content</p>
                   ) : (
-                    dayCards.map((c) => (
-                      <MiniCard key={c.id} card={c} onDragStart={handleDragStart} />
-                    ))
+                    dayCards.map((c) => renderCard(c))
                   )}
                 </div>
               );
@@ -421,9 +656,7 @@ function ContentPlannerPage() {
                     )}
                   >
                     <p className="px-0.5 font-mono text-[9px] uppercase tracking-[0.1em] text-text-subtle">{slot}</p>
-                    {slotCards.map((c) => (
-                      <MiniCard key={c.id} card={c} onDragStart={handleDragStart} />
-                    ))}
+                    {slotCards.map((c) => renderCard(c))}
                   </div>
                 );
               }),
@@ -444,17 +677,31 @@ function ContentPlannerPage() {
             ) : (
               filtered
                 .filter((c) => c.day === 10)
-                .map((c) => (
-                  <div key={c.id} className="flex items-center gap-3 rounded-lg border border-border-subtle bg-surface-2 px-3 py-2.5">
-                    <PlatformIcon id={c.platform} className="size-4" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[13px] text-foreground">{c.title}</p>
-                      <p className="text-[11px] text-text-subtle">{c.project}</p>
+                .map((c) => {
+                  const projectName = c.projectId ? (projectsById.get(c.projectId) ?? "Unknown project") : "No project";
+                  return (
+                    <div key={c.id} className="flex items-center gap-3 rounded-lg border border-border-subtle bg-surface-2 px-3 py-2.5">
+                      <PlatformIcon id={c.platform as PlatformId} className="size-4" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[13px] text-foreground">{c.title}</p>
+                        <p className="text-[11px] text-text-subtle">{projectName}</p>
+                      </div>
+                      <StatusPill tone={stageTone[c.stage as Stage]}>{c.stage}</StatusPill>
+                      <CardActionsMenu
+                        card={c}
+                        projectName={projectName}
+                        onEdit={() => openEdit(c)}
+                        onDuplicate={() => duplicateMutation.mutate(c)}
+                        onDelete={() => deleteMutation.mutate(c.id)}
+                        onOpenProject={
+                          c.projectId
+                            ? () => navigate({ to: "/projects/$projectId", params: { projectId: c.projectId! } })
+                            : undefined
+                        }
+                      />
                     </div>
-                    <StatusPill tone={stageTone[c.stage]}>{c.stage}</StatusPill>
-                    <CardActionsMenu card={c} />
-                  </div>
-                ))
+                  );
+                })
             )}
           </div>
         )}
@@ -477,9 +724,7 @@ function ContentPlannerPage() {
                   <span className="font-mono text-[10px] text-text-subtle">{stageCards.length}</span>
                 </div>
                 <div className="flex flex-1 flex-col gap-2">
-                  {stageCards.map((c) => (
-                    <MiniCard key={c.id} card={c} onDragStart={handleDragStart} />
-                  ))}
+                  {stageCards.map((c) => renderCard(c))}
                 </div>
               </div>
             );

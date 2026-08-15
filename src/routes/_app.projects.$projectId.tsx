@@ -1,7 +1,11 @@
-import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
 import {
+  AlertTriangle,
   ChevronLeft,
   Share2,
   Copy,
@@ -21,7 +25,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { EmptyState } from "@/components/app/primitives";
-import { ContextActions, StatusPill, type StateTone } from "@/components/app/studio-kit";
+import { ContextActions, StatusPill, WireLine, type StateTone } from "@/components/app/studio-kit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,6 +52,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import {
+  deleteProject,
+  duplicateProject,
+  getProject,
+  setProjectArchived,
+  updateProject,
+} from "@/lib/server/projects";
 
 export const Route = createFileRoute("/_app/projects/$projectId")({
   head: ({ params }) => ({
@@ -153,19 +164,134 @@ function ItemRow({
 
 export function ProjectDetailPage() {
   const { projectId } = Route.useParams();
-  const title = projectTitle(projectId);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const [status] = useState("In progress");
-  const [description, setDescription] = useState(
-    "A five-part series introducing new creators to the workspace, covering setup, first publish and growth loops.",
-  );
-  const [name, setName] = useState(title);
-  const [tags, setTags] = useState("youtube, series, onboarding");
+  const getProjectFn = useServerFn(getProject);
+  const updateProjectFn = useServerFn(updateProject);
+  const setArchivedFn = useServerFn(setProjectArchived);
+  const duplicateProjectFn = useServerFn(duplicateProject);
+  const deleteProjectFn = useServerFn(deleteProject);
+
+  const projectQueryKey = ["projects", projectId] as const;
+
+  const {
+    data: project,
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: projectQueryKey,
+    queryFn: () => getProjectFn({ data: { id: projectId } }),
+    retry: false,
+  });
+
+  function invalidateProjectData() {
+    queryClient.invalidateQueries({ queryKey: projectQueryKey });
+    queryClient.invalidateQueries({ queryKey: ["projects"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+  }
+
+  const updateMutation = useMutation({
+    mutationFn: (input: Parameters<typeof updateProjectFn>[0]) => updateProjectFn(input),
+    onSuccess: () => {
+      invalidateProjectData();
+      toast.success("Settings saved");
+    },
+    onError: () => toast.error("Couldn't save changes. Try again."),
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: (archived: boolean) => setArchivedFn({ data: { id: projectId, archived } }),
+    onSuccess: () => {
+      invalidateProjectData();
+      toast("Project archive status updated");
+    },
+    onError: () => toast.error("Couldn't update the project. Try again."),
+  });
+
+  const duplicateMutation = useMutation({
+    mutationFn: () => duplicateProjectFn({ data: { id: projectId } }),
+    onSuccess: (created) => {
+      invalidateProjectData();
+      toast.success("Project duplicated", { description: created.name });
+    },
+    onError: () => toast.error("Couldn't duplicate the project. Try again."),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteProjectFn({ data: { id: projectId } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+      toast("Project deleted");
+      navigate({ to: "/projects" });
+    },
+    onError: () => toast.error("Couldn't delete the project. Try again."),
+  });
+
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [tags, setTags] = useState("");
   const [visibility, setVisibility] = useState("private");
+
+  useEffect(() => {
+    if (project) {
+      setName(project.name);
+      setDescription(project.description ?? "");
+      setTags(project.tags.join(", "));
+      setVisibility(project.visibility);
+    }
+  }, [project?.id]);
 
   function notify(action: string) {
     toast(action);
   }
+
+  function saveSettings() {
+    updateMutation.mutate({
+      data: {
+        id: projectId,
+        name: name.trim() || undefined,
+        description: description.trim(),
+        tags: tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
+        visibility: visibility as "private" | "team" | "public",
+      },
+    });
+  }
+
+  if (isLoading) {
+    return (
+      <div className="space-y-8">
+        <div className="space-y-4 border-b border-border-subtle pb-6">
+          <WireLine className="h-4 w-32" />
+          <WireLine className="h-8 w-72" />
+          <WireLine className="h-2 w-40" />
+        </div>
+        <WireLine className="h-64 w-full rounded-xl" />
+      </div>
+    );
+  }
+
+  if (isError || !project) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Project not found"
+        description="This project doesn't exist, or you don't have access to it."
+        action={
+          <Button asChild variant="outline" size="sm">
+            <Link to="/projects">Back to projects</Link>
+          </Button>
+        }
+      />
+    );
+  }
+
+  const title = project.name;
+  const status = project.status;
 
   return (
     <div className="space-y-8">
@@ -184,19 +310,33 @@ export function ProjectDetailPage() {
               <StatusPill tone={statusTone[status]}>{status}</StatusPill>
             </div>
             <div className="mt-3 flex items-center gap-3">
-              <Progress value={62} className="h-1.5 w-40" />
-              <span className="font-mono text-[11px] text-text-subtle">62% · updated 2 hours ago</span>
+              <Progress value={project.progress} className="h-1.5 w-40" />
+              <span className="font-mono text-[11px] text-text-subtle">
+                {project.progress}% · updated {formatDistanceToNow(project.updatedAt, { addSuffix: true })}
+              </span>
             </div>
           </div>
           <div className="flex shrink-0 gap-2">
             <Button variant="outline" size="sm" disabled className="gap-1.5">
               <Share2 className="size-3.5" /> Share
             </Button>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => notify("Project duplicated")}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => duplicateMutation.mutate()}
+              disabled={duplicateMutation.isPending}
+            >
               <Copy className="size-3.5" /> Duplicate
             </Button>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => notify("Project archived")}>
-              <Archive className="size-3.5" /> Archive
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => archiveMutation.mutate(!project.archived)}
+              disabled={archiveMutation.isPending}
+            >
+              <Archive className="size-3.5" /> {project.archived ? "Unarchive" : "Archive"}
             </Button>
             <Button variant="outline" size="sm" className="gap-1.5">
               <SettingsIcon className="size-3.5" /> Settings
@@ -236,7 +376,9 @@ export function ProjectDetailPage() {
 
           <div className="rounded-xl border border-border bg-surface p-5">
             <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">Description</p>
-            <p className="mt-2 text-[13px] leading-relaxed text-text-muted">{description}</p>
+            <p className="mt-2 text-[13px] leading-relaxed text-text-muted">
+              {project.description || "No description yet."}
+            </p>
             <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">Next milestone</p>
             <p className="mt-2 text-[13px] text-text-muted">Finalize Episode 2 script — due in 3 days.</p>
           </div>
@@ -373,8 +515,8 @@ export function ProjectDetailPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button size="sm" onClick={() => toast.success("Settings saved")}>
-              Save changes
+            <Button size="sm" onClick={saveSettings} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? "Saving…" : "Save changes"}
             </Button>
           </div>
 
@@ -385,8 +527,13 @@ export function ProjectDetailPage() {
                 <p className="text-[13px] text-foreground">Archive this project</p>
                 <p className="text-[12px] text-text-subtle">Hide it from the active list without deleting anything.</p>
               </div>
-              <Button variant="outline" size="sm" onClick={() => notify("Project archived")}>
-                Archive
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => archiveMutation.mutate(!project.archived)}
+                disabled={archiveMutation.isPending}
+              >
+                {project.archived ? "Unarchive" : "Archive"}
               </Button>
             </div>
             <div className="flex items-center justify-between gap-4 border-t border-danger/20 pt-4">
@@ -394,7 +541,12 @@ export function ProjectDetailPage() {
                 <p className="text-[13px] text-foreground">Delete this project</p>
                 <p className="text-[12px] text-text-subtle">Permanently remove the project and all associated assets.</p>
               </div>
-              <Button variant="destructive" size="sm" onClick={() => notify("Project deleted")}>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => deleteMutation.mutate()}
+                disabled={deleteMutation.isPending}
+              >
                 <Trash2 className="size-3.5" /> Delete
               </Button>
             </div>

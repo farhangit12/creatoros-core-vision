@@ -37,6 +37,7 @@ import { Route as AppTemplatesRouteImport } from './routes/_app.templates'
 import { Route as AppThumbnailStudioRouteImport } from './routes/_app.thumbnail-studio'
 import { Route as AppUpcomingRouteImport } from './routes/_app.upcoming'
 import { Route as AppVideoStudioRouteImport } from './routes/_app.video-studio'
+import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
 import { Route as AppProjectsProjectIdRouteImport } from './routes/_app.projects.$projectId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -178,6 +179,11 @@ const AppVideoStudioRoute = AppVideoStudioRouteImport.update({
   path: '/video-studio',
   getParentRoute: () => AppRoute,
 } as any)
+const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppProjectsRoute,
+} as any)
 const AppProjectsProjectIdRoute = AppProjectsProjectIdRouteImport.update({
   id: '/$projectId',
   path: '/$projectId',
@@ -213,6 +219,7 @@ export interface FileRoutesByFullPath {
   '/upcoming': typeof AppUpcomingRoute
   '/video-studio': typeof AppVideoStudioRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/projects/': typeof AppProjectsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -234,7 +241,6 @@ export interface FileRoutesByTo {
   '/knowledge-base': typeof AppKnowledgeBaseRoute
   '/notifications': typeof AppNotificationsRoute
   '/profile': typeof AppProfileRoute
-  '/projects': typeof AppProjectsRouteWithChildren
   '/repurpose': typeof AppRepurposeRoute
   '/script-studio': typeof AppScriptStudioRoute
   '/settings': typeof AppSettingsRoute
@@ -243,6 +249,7 @@ export interface FileRoutesByTo {
   '/upcoming': typeof AppUpcomingRoute
   '/video-studio': typeof AppVideoStudioRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/projects': typeof AppProjectsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -275,6 +282,7 @@ export interface FileRoutesById {
   '/_app/upcoming': typeof AppUpcomingRoute
   '/_app/video-studio': typeof AppVideoStudioRoute
   '/_app/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/_app/projects/': typeof AppProjectsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -307,6 +315,7 @@ export interface FileRouteTypes {
     | '/upcoming'
     | '/video-studio'
     | '/projects/$projectId'
+    | '/projects/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -328,7 +337,6 @@ export interface FileRouteTypes {
     | '/knowledge-base'
     | '/notifications'
     | '/profile'
-    | '/projects'
     | '/repurpose'
     | '/script-studio'
     | '/settings'
@@ -337,6 +345,7 @@ export interface FileRouteTypes {
     | '/upcoming'
     | '/video-studio'
     | '/projects/$projectId'
+    | '/projects'
   id:
     | '__root__'
     | '/'
@@ -368,6 +377,7 @@ export interface FileRouteTypes {
     | '/_app/upcoming'
     | '/_app/video-studio'
     | '/_app/projects/$projectId'
+    | '/_app/projects/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -577,6 +587,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppVideoStudioRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/projects/': {
+      id: '/_app/projects/'
+      path: '/'
+      fullPath: '/projects/'
+      preLoaderRoute: typeof AppProjectsIndexRouteImport
+      parentRoute: typeof AppProjectsRoute
+    }
     '/_app/projects/$projectId': {
       id: '/_app/projects/$projectId'
       path: '/$projectId'
@@ -589,10 +606,12 @@ declare module '@tanstack/react-router' {
 
 interface AppProjectsRouteChildren {
   AppProjectsProjectIdRoute: typeof AppProjectsProjectIdRoute
+  AppProjectsIndexRoute: typeof AppProjectsIndexRoute
 }
 
 const AppProjectsRouteChildren: AppProjectsRouteChildren = {
   AppProjectsProjectIdRoute: AppProjectsProjectIdRoute,
+  AppProjectsIndexRoute: AppProjectsIndexRoute,
 }
 
 const AppProjectsRouteWithChildren = AppProjectsRoute._addFileChildren(

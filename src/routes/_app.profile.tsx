@@ -1,11 +1,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
+import { format } from "date-fns";
 import { Check, KeyRound, Loader2, LogOut, ShieldCheck } from "lucide-react";
 import { PageHeader, SectionLabel } from "@/components/app/primitives";
+import { WireLine } from "@/components/app/studio-kit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { getUserProfile, updateUserProfile } from "@/lib/server/settings";
 
 export const Route = createFileRoute("/_app/profile")({
   head: () => ({
@@ -25,23 +31,77 @@ export const Route = createFileRoute("/_app/profile")({
   component: ProfilePage,
 });
 
+const PROFILE_QUERY_KEY = ["user-profile"] as const;
+
+function initialsFor(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return parts
+    .slice(0, 2)
+    .map((p) => p[0]!.toUpperCase())
+    .join("");
+}
+
 function ProfilePage() {
+  const queryClient = useQueryClient();
+  const getUserProfileFn = useServerFn(getUserProfile);
+  const updateUserProfileFn = useServerFn(updateUserProfile);
+
+  const { data: profile, isLoading } = useQuery({
+    queryKey: PROFILE_QUERY_KEY,
+    queryFn: () => getUserProfileFn(),
+  });
+
   const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [email, setEmail] = useState("alex@creatoros.ai");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("");
+  const [website, setWebsite] = useState("");
+  const [bio, setBio] = useState("");
   const emailInvalid = !email.includes("@");
 
-  const save = () => {
-    if (emailInvalid) return;
-    setSaving(true);
-    window.setTimeout(() => {
-      setSaving(false);
+  useEffect(() => {
+    if (profile) {
+      setName(profile.name);
+      setEmail(profile.email);
+      setRole(profile.role ?? "");
+      setWebsite(profile.website ?? "");
+      setBio(profile.bio ?? "");
+    }
+  }, [profile?.id]);
+
+  const updateMutation = useMutation({
+    mutationFn: (input: Parameters<typeof updateUserProfileFn>[0]) => updateUserProfileFn(input),
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: PROFILE_QUERY_KEY });
+      // Email changes aren't persisted here (that needs better-auth's own
+      // verified-change flow) — snap the field back to the real value.
+      setEmail(updated.email);
       setEditing(false);
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2500);
-    }, 800);
+    },
+    onError: () => {
+      toast.error("Couldn't save your profile. Try again.");
+    },
+  });
+
+  const save = () => {
+    if (emailInvalid) return;
+    updateMutation.mutate({
+      data: {
+        name: name.trim() || undefined,
+        role: role.trim(),
+        website: website.trim(),
+        bio: bio.trim(),
+      },
+    });
   };
+
+  const saving = updateMutation.isPending;
+  const displayName = profile?.name ?? "";
+  const joined = profile ? format(profile.createdAt, "MMMM yyyy") : "";
 
   return (
     <div className="space-y-12">
@@ -55,7 +115,16 @@ function ProfilePage() {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setEditing(false)}
+                onClick={() => {
+                  setEditing(false);
+                  if (profile) {
+                    setName(profile.name);
+                    setEmail(profile.email);
+                    setRole(profile.role ?? "");
+                    setWebsite(profile.website ?? "");
+                    setBio(profile.bio ?? "");
+                  }
+                }}
                 disabled={saving}
               >
                 Cancel
@@ -71,7 +140,7 @@ function ProfilePage() {
               </Button>
             </>
           ) : (
-            <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+            <Button size="sm" variant="outline" onClick={() => setEditing(true)} disabled={isLoading}>
               Edit profile
             </Button>
           )
@@ -87,77 +156,102 @@ function ProfilePage() {
         </p>
       ) : null}
 
-      <section className="flex flex-col gap-6 rounded-2xl border border-border bg-surface p-7 sm:flex-row sm:items-center">
-        <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-surface-3 font-mono text-[18px] text-foreground">
-          AR
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[20px] font-medium tracking-[-0.02em] text-foreground">
-            Alex Rivera
-          </p>
-          <p className="mt-1 text-[13px] text-text-muted">
-            alex@creatoros.ai · Pro plan · Joined March 2026
-          </p>
-        </div>
-        <Button variant="outline" size="sm" disabled={!editing}>
-          Change avatar
-        </Button>
-      </section>
+      {isLoading ? (
+        <section className="flex flex-col gap-6 rounded-2xl border border-border bg-surface p-7 sm:flex-row sm:items-center">
+          <WireLine className="size-16 shrink-0 rounded-2xl" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <WireLine className="h-5 w-48" />
+            <WireLine className="h-4 w-64" />
+          </div>
+        </section>
+      ) : (
+        <section className="flex flex-col gap-6 rounded-2xl border border-border bg-surface p-7 sm:flex-row sm:items-center">
+          <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-surface-3 font-mono text-[18px] text-foreground">
+            {initialsFor(displayName)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[20px] font-medium tracking-[-0.02em] text-foreground">
+              {displayName}
+            </p>
+            <p className="mt-1 text-[13px] text-text-muted">
+              {profile?.email} · Pro plan · Joined {joined}
+            </p>
+          </div>
+          <Button variant="outline" size="sm" disabled={!editing}>
+            Change avatar
+          </Button>
+        </section>
+      )}
 
       <section>
         <SectionLabel>Profile information</SectionLabel>
-        <div className="grid gap-6 rounded-xl border border-border bg-surface p-7 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="fullname">Full name</Label>
-            <Input
-              id="fullname"
-              className="h-10"
-              defaultValue="Alex Rivera"
-              disabled={!editing}
-            />
+        {isLoading ? (
+          <div className="grid gap-6 rounded-xl border border-border bg-surface p-7 md:grid-cols-2">
+            {Array.from({ length: 4 }, (_, i) => (
+              <div key={i} className="space-y-2">
+                <WireLine className="h-3 w-20" />
+                <WireLine className="h-10 w-full" />
+              </div>
+            ))}
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="p-email">Email</Label>
-            <Input
-              id="p-email"
-              className="h-10"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={!editing}
-              aria-invalid={emailInvalid}
-            />
-            {emailInvalid ? (
-              <p className="text-xs text-danger">Enter a valid email address.</p>
-            ) : null}
+        ) : (
+          <div className="grid gap-6 rounded-xl border border-border bg-surface p-7 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="fullname">Full name</Label>
+              <Input
+                id="fullname"
+                className="h-10"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={!editing}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="p-email">Email</Label>
+              <Input
+                id="p-email"
+                className="h-10"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={!editing}
+                aria-invalid={emailInvalid}
+              />
+              {emailInvalid ? (
+                <p className="text-xs text-danger">Enter a valid email address.</p>
+              ) : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="role">Role</Label>
+              <Input
+                id="role"
+                className="h-10"
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                disabled={!editing}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="site">Website</Label>
+              <Input
+                id="site"
+                className="h-10"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                disabled={!editing}
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="bio">Bio</Label>
+              <Textarea
+                id="bio"
+                rows={3}
+                disabled={!editing}
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+              />
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="role">Role</Label>
-            <Input
-              id="role"
-              className="h-10"
-              defaultValue="Independent video creator"
-              disabled={!editing}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="site">Website</Label>
-            <Input
-              id="site"
-              className="h-10"
-              defaultValue="alexrivera.studio"
-              disabled={!editing}
-            />
-          </div>
-          <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="bio">Bio</Label>
-            <Textarea
-              id="bio"
-              rows={3}
-              disabled={!editing}
-              defaultValue="Long-form documentary essays and weekly short-form. Building a studio of one."
-            />
-          </div>
-        </div>
+        )}
       </section>
 
       <section>
