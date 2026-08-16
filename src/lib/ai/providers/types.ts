@@ -29,6 +29,23 @@ export interface TextProvider {
   generate(request: TextProviderRequest): Promise<TextProviderResult>;
 }
 
+/**
+ * Thrown by HTTP-based provider adapters (groq.ts, openrouter.ts) on a
+ * non-2xx response, carrying the status code so callers (router.ts) can
+ * classify failures as retryable (429/5xx) without string-matching error
+ * messages. Adapters that don't hit an HTTP API directly (gemini.ts uses the
+ * SDK) aren't required to use this.
+ */
+export class ProviderHttpError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ProviderHttpError";
+    this.status = status;
+  }
+}
+
 export interface ImageProviderRequest {
   operation: ImageOperation;
   model: string;
@@ -37,6 +54,13 @@ export interface ImageProviderRequest {
   aspectRatio: string;
   style?: string | undefined;
   sourceAssetId?: string;
+  /**
+   * Publicly fetchable URL of the source asset for image.variation, resolved
+   * by the caller (image-studio.ts already loads the owned asset row to
+   * verify ownership) so providers never need their own DB access -- keeps
+   * the server-only boundary above scoped to API keys / SDK clients only.
+   */
+  sourceAssetUrl?: string;
   metadata?: Record<string, unknown>;
 }
 

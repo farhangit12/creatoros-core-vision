@@ -16,6 +16,14 @@ export interface CompleteGenerationParams {
   output?: unknown;
   usage?: TokenUsage | null;
   costCents?: number | null;
+  /**
+   * Overrides the provider/model recorded at start() -- used when router.ts
+   * falls back to a secondary provider, so persistence reflects which
+   * provider/model actually produced the output, not just the one initially
+   * selected.
+   */
+  provider?: string;
+  model?: string;
 }
 
 /**
@@ -62,6 +70,8 @@ class InMemoryUsageLogger implements UsageLogger {
     const completedAt = new Date().toISOString();
     const updated: GenerationRecord = {
       ...existing,
+      provider: params.provider ?? existing.provider,
+      model: params.model ?? existing.model,
       status: "completed",
       output: params.output ?? null,
       usage: params.usage ?? null,

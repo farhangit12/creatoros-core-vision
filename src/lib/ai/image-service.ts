@@ -46,7 +46,7 @@ export async function generateImages(params: GenerateImagesParams): Promise<Gene
   });
 
   try {
-    const result = await getImageProvider().generate({
+    const result = await getImageProvider("image.generate").generate({
       operation: "image.generate",
       model,
       prompt: params.prompt,
@@ -95,7 +95,7 @@ export async function generateThumbnails(params: GenerateThumbnailsParams): Prom
   });
 
   try {
-    const result = await getImageProvider().generate({
+    const result = await getImageProvider("thumbnail.generate").generate({
       operation: "thumbnail.generate",
       model,
       prompt: params.topic,
@@ -124,6 +124,8 @@ export async function generateThumbnails(params: GenerateThumbnailsParams): Prom
 export interface CreateVariationParams {
   userId: string;
   sourceAssetId: string;
+  /** Publicly fetchable URL of the source asset -- see providers/types.ts. */
+  sourceAssetUrl?: string;
   aspectRatio: string;
   prompt?: string;
   count?: number;
@@ -150,13 +152,14 @@ export async function createVariation(params: CreateVariationParams): Promise<Cr
   });
 
   try {
-    const result = await getImageProvider().generate({
+    const result = await getImageProvider("image.variation").generate({
       operation: "image.variation",
       model,
       prompt: params.prompt ?? "",
       count: params.count ?? 1,
       aspectRatio: params.aspectRatio,
       sourceAssetId: params.sourceAssetId,
+      ...(params.sourceAssetUrl !== undefined ? { sourceAssetUrl: params.sourceAssetUrl } : {}),
     });
     const assets = result.assets.map(toImageAsset);
     const completed = usageLogger.complete(generation.id, { output: assets });

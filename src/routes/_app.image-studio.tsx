@@ -66,7 +66,7 @@ const useCases = ["Post", "Story", "Blog header", "Cover art", "B-roll frame"];
 const styles = ["Photoreal", "Illustration", "3D render", "Editorial", "Graphic"];
 const counts = [1, 2, 4] as const;
 
-type Img = { id: string; recommended: boolean };
+type Img = { id: string; recommended: boolean; url: string };
 
 function aspectClass(ratio: string) {
   if (ratio === "9:16") return "aspect-[9/16]";
@@ -75,7 +75,15 @@ function aspectClass(ratio: string) {
   return "aspect-video";
 }
 
-function ImageFrame({ ratio, className }: { ratio: string; className?: string }) {
+function ImageFrame({
+  ratio,
+  className,
+  url,
+}: {
+  ratio: string;
+  className?: string;
+  url?: string;
+}) {
   return (
     <div
       className={cn(
@@ -84,7 +92,11 @@ function ImageFrame({ ratio, className }: { ratio: string; className?: string })
         className,
       )}
     >
-      <ImageIcon className="size-8 text-text-subtle/50" />
+      {url ? (
+        <img src={url} alt="" className="size-full object-cover" />
+      ) : (
+        <ImageIcon className="size-8 text-text-subtle/50" />
+      )}
     </div>
   );
 }
@@ -131,7 +143,7 @@ function ImageStudioPage() {
         },
       }),
     onSuccess: (result) => {
-      setImages(result.assets.map((a) => ({ id: a.id, recommended: a.recommended })));
+      setImages(result.assets.map((a) => ({ id: a.id, recommended: a.recommended, url: a.url })));
       setStatus("done");
     },
     onError: () => {
@@ -151,7 +163,7 @@ function ImageStudioPage() {
         },
       }),
     onSuccess: (result) => {
-      setImages(result.assets.map((a) => ({ id: a.id, recommended: a.recommended })));
+      setImages(result.assets.map((a) => ({ id: a.id, recommended: a.recommended, url: a.url })));
       setStatus("done");
     },
     onError: () => {
@@ -330,7 +342,7 @@ function ImageStudioPage() {
                 <div className="grid grid-cols-2 gap-4">
                   {compareImages.length === 2 ? (
                     compareImages.map((img) => (
-                      <ImageFrame key={img.id} ratio={ratio} />
+                      <ImageFrame key={img.id} ratio={ratio} url={img.url} />
                     ))
                   ) : (
                     <p className="col-span-2 py-6 text-center text-[12px] text-text-subtle">
@@ -377,7 +389,7 @@ function ImageStudioPage() {
                       </div>
                     }
                   >
-                    <ImageFrame ratio={ratio} className="mt-1" />
+                    <ImageFrame ratio={ratio} className="mt-1" url={img.url} />
                   </OptionCard>
                 ))}
               </div>
@@ -453,7 +465,7 @@ function ImageStudioPage() {
                   <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-subtle">
                     Preview
                   </p>
-                  <ImageFrame ratio={ratio} />
+                  <ImageFrame ratio={ratio} url={selectedImage.url} />
                 </div>
               </div>
             </Panel>

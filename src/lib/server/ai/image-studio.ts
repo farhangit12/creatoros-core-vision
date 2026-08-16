@@ -182,7 +182,7 @@ export const createImageVariationAction = createServerFn({ method: "POST" })
     if (data.conversationId) {
       await assertOwnedConversation(userId, data.conversationId);
     }
-    await loadOwnedAsset(userId, data.sourceAssetId);
+    const sourceAsset = await loadOwnedAsset(userId, data.sourceAssetId);
     const startedAt = new Date();
     const { conversationId, prompt, count, ...rest } = data;
     const input = {
@@ -195,6 +195,7 @@ export const createImageVariationAction = createServerFn({ method: "POST" })
       const result = await createVariation({
         userId,
         ...input,
+        sourceAssetUrl: sourceAsset.url,
         ...(conversationId !== undefined ? { conversationId } : {}),
       });
       await db.insert(aiGenerations).values(toDbGeneration(userId, result.generation));

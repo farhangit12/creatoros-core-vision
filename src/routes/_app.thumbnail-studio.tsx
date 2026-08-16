@@ -66,6 +66,7 @@ type Variation = {
   label: string;
   recommended: boolean;
   rationale: string;
+  url: string;
 };
 
 function aspectClass(ratio: string) {
@@ -81,12 +82,14 @@ function ThumbnailFrame({
   overlay,
   fontSize,
   position,
+  url,
 }: {
   ratio: string;
   className?: string;
   overlay?: string;
   fontSize?: number;
   position?: Position;
+  url?: string;
 }) {
   const posClass: Record<Position, string> = {
     TL: "items-start justify-start text-left",
@@ -108,7 +111,11 @@ function ThumbnailFrame({
         className,
       )}
     >
-      <ImageIcon className="absolute left-1/2 top-1/2 size-8 -translate-x-1/2 -translate-y-1/2 text-text-subtle/50" />
+      {url ? (
+        <img src={url} alt="" className="absolute inset-0 size-full object-cover" />
+      ) : (
+        <ImageIcon className="absolute left-1/2 top-1/2 size-8 -translate-x-1/2 -translate-y-1/2 text-text-subtle/50" />
+      )}
       {overlay ? (
         <span
           className="relative z-10 m-3 max-w-full break-words font-medium leading-tight text-foreground drop-shadow"
@@ -159,6 +166,7 @@ function ThumbnailStudioPage() {
           label: v.label,
           recommended: v.recommended,
           rationale: v.rationale,
+          url: v.asset.url,
         })),
       );
       setStatus("done");
@@ -329,7 +337,7 @@ function ThumbnailStudioPage() {
                         <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-subtle">
                           {v.label}
                         </p>
-                        <ThumbnailFrame ratio={ratio} />
+                        <ThumbnailFrame ratio={ratio} url={v.url} />
                       </div>
                     ))
                   ) : (
@@ -364,7 +372,7 @@ function ThumbnailStudioPage() {
                       </Button>
                     }
                   >
-                    <ThumbnailFrame ratio={ratio} className="mt-1" />
+                    <ThumbnailFrame ratio={ratio} className="mt-1" url={v.url} />
                   </OptionCard>
                 ))}
               </div>
@@ -476,6 +484,7 @@ function ThumbnailStudioPage() {
                     overlay={overlay}
                     fontSize={fontSize}
                     position={position}
+                    url={selectedVariation.url}
                   />
                 </div>
               </div>

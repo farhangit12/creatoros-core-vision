@@ -1,4 +1,5 @@
 import { getTextProvider, resolveOperation } from "./registry";
+import { generateText } from "./router";
 import { usageLogger } from "./usage";
 import type { ChatMessage, GenerationRecord, ScriptOption } from "./types";
 
@@ -29,14 +30,18 @@ export async function chat(params: ChatParams): Promise<ChatResult> {
   });
 
   try {
-    const result = await getTextProvider("chat").generate({
-      operation: "chat",
-      model,
-      messages: params.messages,
-      metadata: { tone: params.tone },
+    const routed = await generateText(
+      "chat",
+      { messages: params.messages, metadata: { tone: params.tone } },
+      params.model,
+    );
+    const message: ChatMessage = { role: "assistant", content: routed.result.content };
+    const completed = usageLogger.complete(generation.id, {
+      output: message,
+      usage: routed.result.usage,
+      provider: routed.provider,
+      model: routed.model,
     });
-    const message: ChatMessage = { role: "assistant", content: result.content };
-    const completed = usageLogger.complete(generation.id, { output: message, usage: result.usage });
     return { message, generation: completed };
   } catch (error) {
     usageLogger.fail(generation.id, error instanceof Error ? error.message : "Chat generation failed.");
@@ -78,22 +83,29 @@ export async function generateScript(params: GenerateScriptParams): Promise<Gene
   });
 
   try {
-    const result = await getTextProvider("script.generate").generate({
-      operation: "script.generate",
-      model,
-      prompt: params.topic,
-      metadata: {
-        platform: params.platform,
-        contentType: params.contentType,
-        duration: params.duration,
-        tone: params.tone,
-        language: params.language,
-        creativity: params.creativity,
-        optionCount: params.multiOption ? 3 : 1,
+    const routed = await generateText(
+      "script.generate",
+      {
+        prompt: params.topic,
+        metadata: {
+          platform: params.platform,
+          contentType: params.contentType,
+          duration: params.duration,
+          tone: params.tone,
+          language: params.language,
+          creativity: params.creativity,
+          optionCount: params.multiOption ? 3 : 1,
+        },
       },
+      params.model,
+    );
+    const options = JSON.parse(routed.result.content) as ScriptOption[];
+    const completed = usageLogger.complete(generation.id, {
+      output: options,
+      usage: routed.result.usage,
+      provider: routed.provider,
+      model: routed.model,
     });
-    const options = JSON.parse(result.content) as ScriptOption[];
-    const completed = usageLogger.complete(generation.id, { output: options, usage: result.usage });
     return { options, generation: completed };
   } catch (error) {
     usageLogger.fail(generation.id, error instanceof Error ? error.message : "Script generation failed.");
@@ -128,14 +140,18 @@ export async function rewriteScript(params: RewriteScriptParams): Promise<Rewrit
   });
 
   try {
-    const result = await getTextProvider("script.rewrite").generate({
-      operation: "script.rewrite",
-      model,
-      prompt: params.sectionText,
-      metadata: { action: params.action },
+    const routed = await generateText(
+      "script.rewrite",
+      { prompt: params.sectionText, metadata: { action: params.action } },
+      params.model,
+    );
+    const completed = usageLogger.complete(generation.id, {
+      output: routed.result.content,
+      usage: routed.result.usage,
+      provider: routed.provider,
+      model: routed.model,
     });
-    const completed = usageLogger.complete(generation.id, { output: result.content, usage: result.usage });
-    return { text: result.content, generation: completed };
+    return { text: routed.result.content, generation: completed };
   } catch (error) {
     usageLogger.fail(generation.id, error instanceof Error ? error.message : "Script rewrite failed.");
     throw error;
