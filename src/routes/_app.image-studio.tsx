@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useMutation } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
 import {
   Sparkles,
   UploadCloud,
@@ -45,6 +48,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { createImageVariationAction, generateImageAction } from "@/lib/server/ai/image-studio";
 
 export const Route = createFileRoute("/_app/image-studio")({
   head: () => ({
@@ -111,18 +115,62 @@ function ImageStudioPage() {
   const [warmth, setWarmth] = useState(0);
   const [bgState, setBgState] = useState<"idle" | "processing" | "done">("idle");
 
+  const generateImageFn = useServerFn(generateImageAction);
+  const createVariationFn = useServerFn(createImageVariationAction);
+
+  const generateMutation = useMutation({
+    mutationFn: () =>
+      generateImageFn({
+        data: {
+          prompt: prompt.trim(),
+          count,
+          aspectRatio: ratio,
+          ...(style ? { style } : {}),
+          ...(useCase ? { useCase } : {}),
+          platform: platform.label,
+        },
+      }),
+    onSuccess: (result) => {
+      setImages(result.assets.map((a) => ({ id: a.id, recommended: a.recommended })));
+      setStatus("done");
+    },
+    onError: () => {
+      toast.error("Couldn't generate images. Try again.");
+      setStatus("idle");
+    },
+  });
+
+  const variationMutation = useMutation({
+    mutationFn: (sourceAssetId: string) =>
+      createVariationFn({
+        data: {
+          sourceAssetId,
+          aspectRatio: ratio,
+          count: 1,
+          ...(prompt.trim() ? { prompt: prompt.trim() } : {}),
+        },
+      }),
+    onSuccess: (result) => {
+      setImages(result.assets.map((a) => ({ id: a.id, recommended: a.recommended })));
+      setStatus("done");
+    },
+    onError: () => {
+      toast.error("Couldn't create a variation. Try again.");
+      setStatus("done");
+    },
+  });
+
   function generate() {
     setStatus("generating");
     setImages([]);
     setSelected(null);
-    window.setTimeout(() => {
-      const imgs: Img[] = Array.from({ length: count }).map((_, i) => ({
-        id: `img-${i + 1}`,
-        recommended: i === 0,
-      }));
-      setImages(imgs);
-      setStatus("done");
-    }, 1200);
+    generateMutation.mutate();
+  }
+
+  function createVariation(sourceAssetId: string) {
+    setStatus("generating");
+    setSelected(null);
+    variationMutation.mutate(sourceAssetId);
   }
 
   function removeBackground() {
@@ -206,7 +254,7 @@ function ImageStudioPage() {
             </Field>
             <div className="flex items-center justify-between pt-1">
               <CostHint credits={count * 3} />
-              <Button size="sm" onClick={generate} disabled={status === "generating"}>
+              <Button size="sm" onClick={generate} disabled={status === "generating" || !prompt.trim()}>
                 {status === "generating" ? "Generating…" : "Generate"}
               </Button>
             </div>
@@ -302,11 +350,27 @@ function ImageStudioPage() {
                     onSelect={() => setSelected(img.id)}
                     footer={
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline" className="flex-1" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            generate();
+                          }}
+                        >
                           <RefreshCw className="size-3.5" />
                           Regenerate
                         </Button>
-                        <Button size="sm" variant="outline" className="flex-1" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            createVariation(img.id);
+                          }}
+                        >
                           <Copy className="size-3.5" />
                           Create variation
                         </Button>

@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useMutation } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
 import {
   ImageIcon,
   UploadCloud,
@@ -40,6 +43,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { generateThumbnailAction } from "@/lib/server/ai/thumbnail-studio";
 
 export const Route = createFileRoute("/_app/thumbnail-studio")({
   head: () => ({
@@ -136,28 +140,44 @@ function ThumbnailStudioPage() {
   const [history, setHistory] = useState<string[]>([]);
   const [future, setFuture] = useState<string[]>([]);
 
+  const generateThumbnailFn = useServerFn(generateThumbnailAction);
+
+  const generateMutation = useMutation({
+    mutationFn: () =>
+      generateThumbnailFn({
+        data: {
+          topic,
+          aspectRatio: ratio,
+          ...(style ? { style } : {}),
+          platform: platform.label,
+        },
+      }),
+    onSuccess: (result) => {
+      setVariations(
+        result.variations.map((v) => ({
+          id: v.id,
+          label: v.label,
+          recommended: v.recommended,
+          rationale: v.rationale,
+        })),
+      );
+      setStatus("done");
+    },
+    onError: () => {
+      toast.error("Couldn't generate thumbnails. Try again.");
+      setStatus("idle");
+    },
+  });
+
   function generate() {
     setStatus("generating");
     setVariations([]);
     setSelected(null);
-    window.setTimeout(() => {
-      const letters = ["A", "B", "C", "D"];
-      const vs: Variation[] = letters.map((l, i) => ({
-        id: l,
-        label: `Variation ${l}`,
-        recommended: i === 0,
-        rationale:
-          i === 0
-            ? "High-contrast face + bold text tests best for CTR on this topic."
-            : "Alternative composition generated from the same prompt.",
-      }));
-      setVariations(vs);
-      setStatus("done");
-    }, 1200);
+    generateMutation.mutate();
   }
 
-  function regenerate(vid: string) {
-    setVariations((vs) => vs.map((v) => (v.id === vid ? { ...v } : v)));
+  function regenerate(_vid: string) {
+    generate();
   }
 
   function pushHistory(prevOverlay: string) {
@@ -228,7 +248,7 @@ function ThumbnailStudioPage() {
             </Field>
             <div className="flex items-center justify-between pt-1">
               <CostHint credits={6} />
-              <Button size="sm" onClick={generate} disabled={status === "generating"}>
+              <Button size="sm" onClick={generate} disabled={status === "generating" || !topic.trim()}>
                 {status === "generating" ? "Generating…" : "Generate 4 variations"}
               </Button>
             </div>

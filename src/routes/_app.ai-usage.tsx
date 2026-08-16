@@ -1,10 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { AlertTriangle, Zap } from "lucide-react";
 import { PageHeader, SectionLabel } from "@/components/app/primitives";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { creditSummary, models } from "@/lib/creator-data";
+import { getUsageSummary, listGenerations } from "@/lib/server/ai/ai-usage";
 
 export const Route = createFileRoute("/_app/ai-usage")({
   head: () => ({
@@ -25,12 +28,29 @@ export const Route = createFileRoute("/_app/ai-usage")({
   component: AiUsagePage,
 });
 
-const categories = [
-  { label: "Script generation", value: 1120, tone: "accent" },
-  { label: "Image & thumbnail", value: 780, tone: "muted" },
-  { label: "Chat & ideation", value: 430, tone: "muted" },
-  { label: "Transcription", value: 190, tone: "muted" },
-];
+const featureLabels: Record<string, string> = {
+  chat: "Chat & ideation",
+  "script-studio": "Script generation",
+  "image-studio": "Image generation",
+  "thumbnail-studio": "Thumbnail generation",
+};
+
+function countForFeatures(byFeature: { feature: string; count: number }[], features: string[]): number {
+  return features.reduce((sum, f) => sum + (byFeature.find((b) => b.feature === f)?.count ?? 0), 0);
+}
+
+function formatGenerationTimestamp(value: string | Date): string {
+  const date = typeof value === "string" ? new Date(value) : value;
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+  const time = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (isToday) return `Today · ${time}`;
+  if (isYesterday) return `Yesterday · ${time}`;
+  return `${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })} · ${time}`;
+}
 
 const historyByRange = {
   Today: [
@@ -58,14 +78,6 @@ const historyByRange = {
   ],
 };
 
-const generations = [
-  { feature: "Script generation", model: "CreatorOS Precise", credits: 9, at: "Today · 17:40" },
-  { feature: "Thumbnail concept", model: "CreatorOS Balanced", credits: 4, at: "Today · 14:12" },
-  { feature: "Chat ideation", model: "CreatorOS Fast", credits: 1, at: "Yesterday · 20:03" },
-  { feature: "Caption pass", model: "CreatorOS Fast", credits: 1, at: "Yesterday · 11:47" },
-  { feature: "Transcription cleanup", model: "CreatorOS Balanced", credits: 4, at: "2 days ago · 09:15" },
-];
-
 const ranges = ["Today", "Week", "Month"] as const;
 
 function AiUsagePage() {
@@ -77,6 +89,29 @@ function AiUsagePage() {
   const total = creditSummary.allowance;
   const pct = Math.round((used / total) * 100);
   const history = historyByRange[range];
+
+  const listGenerationsFn = useServerFn(listGenerations);
+  const getUsageSummaryFn = useServerFn(getUsageSummary);
+
+  const { data: generations = [] } = useQuery({
+    queryKey: ["ai-usage-generations"],
+    queryFn: () => listGenerationsFn({ data: {} }),
+  });
+
+  const { data: summary } = useQuery({
+    queryKey: ["ai-usage-summary"],
+    queryFn: () => getUsageSummaryFn(),
+  });
+
+  const categories = useMemo(() => {
+    const byFeature = summary?.byFeature ?? [];
+    return [
+      { label: "Script generation", value: countForFeatures(byFeature, ["script-studio"]), tone: "accent" },
+      { label: "Image & thumbnail", value: countForFeatures(byFeature, ["image-studio", "thumbnail-studio"]), tone: "muted" },
+      { label: "Chat & ideation", value: countForFeatures(byFeature, ["chat"]), tone: "muted" },
+      { label: "Transcription", value: 0, tone: "muted" },
+    ];
+  }, [summary]);
 
   return (
     <div className="space-y-12">
@@ -263,16 +298,24 @@ function AiUsagePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
-              {generations.map((g, i) => (
-                <tr key={i}>
-                  <td className="px-5 py-3 text-foreground">{g.feature}</td>
-                  <td className="px-5 py-3 text-text-muted">{g.model}</td>
-                  <td className="px-5 py-3 font-mono text-foreground">{g.credits}</td>
-                  <td className="px-5 py-3 font-mono text-[11px] text-text-subtle">
-                    {g.at}
+              {generations.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-5 py-6 text-center text-[12px] text-text-subtle">
+                    No generations yet — try Chat, Script Studio, Image Studio or Thumbnail Studio.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                generations.map((g) => (
+                  <tr key={g.id}>
+                    <td className="px-5 py-3 text-foreground">{featureLabels[g.feature] ?? g.feature}</td>
+                    <td className="px-5 py-3 text-text-muted">{g.model}</td>
+                    <td className="px-5 py-3 font-mono text-foreground">{g.totalTokens ?? 0}</td>
+                    <td className="px-5 py-3 font-mono text-[11px] text-text-subtle">
+                      {formatGenerationTimestamp(g.createdAt)}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

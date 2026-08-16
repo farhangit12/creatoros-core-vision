@@ -1,5 +1,8 @@
-import { useMemo, useRef, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
 import {
   MessagesSquare,
   Plus,
@@ -61,6 +64,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import {
+  getConversationMessages,
+  listConversations,
+  sendChatMessage,
+  type ConversationRecord,
+  type MessageRecord,
+} from "@/lib/server/ai/chat";
 
 export const Route = createFileRoute("/_app/chat")({
   head: () => ({
@@ -74,45 +84,11 @@ export const Route = createFileRoute("/_app/chat")({
   component: ChatPage,
 });
 
-type Conversation = {
-  id: string;
-  title: string;
-  snippet: string;
-  timestamp: string;
-  group: "Pinned" | "Today" | "Earlier";
-};
+type Group = "Pinned" | "Today" | "Earlier";
 
-type Message = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-};
+type UIConversation = ConversationRecord & { group: Group };
 
-const initialConversations: Conversation[] = [
-  { id: "c1", title: "Q3 video hook ideas", snippet: "Give me 10 punchy hooks for the...", timestamp: "2m ago", group: "Pinned" },
-  { id: "c2", title: "Brand voice rewrite", snippet: "Make this caption sound more...", timestamp: "1h ago", group: "Pinned" },
-  { id: "c3", title: "Newsletter outline", snippet: "Structure a 5-part welcome...", timestamp: "3h ago", group: "Today" },
-  { id: "c4", title: "Competitor teardown", snippet: "Compare our last 3 uploads to...", timestamp: "6h ago", group: "Today" },
-  { id: "c5", title: "Thumbnail copy ideas", snippet: "Short punchy phrases for a...", timestamp: "Yesterday", group: "Earlier" },
-  { id: "c6", title: "Sponsorship pitch draft", snippet: "Write a pitch email to a...", timestamp: "3 days ago", group: "Earlier" },
-];
-
-const initialMessages: Message[] = [
-  { id: "m1", role: "user", content: "Give me 5 hook ideas for a video about creator burnout." },
-  {
-    id: "m2",
-    role: "assistant",
-    content:
-      "Here are five hooks:\n1. \"I almost quit content creation last month.\"\n2. \"Nobody tells you burnout looks like this.\"\n3. \"The algorithm didn't burn me out — my calendar did.\"\n4. \"I filmed this instead of taking a break. Here's why.\"\n5. \"3 signs you're one upload away from quitting.\"",
-  },
-  { id: "m3", role: "user", content: "Can you make hook 3 more specific to YouTube creators?" },
-  {
-    id: "m4",
-    role: "assistant",
-    content:
-      "\"The algorithm didn't burn me out — my upload schedule did.\" This keeps the contrast but grounds it in a YouTube-specific pain point your audience will recognise immediately.",
-  },
-];
+type DisplayMessage = { id: string; role: "user" | "assistant"; content: string };
 
 const suggestedPrompts = [
   "Draft 5 hooks for my next video",
@@ -121,89 +97,166 @@ const suggestedPrompts = [
   "Summarise my last 3 uploads' comments",
 ];
 
+const CHAT_CONVERSATIONS_KEY = ["ai-chat-conversations"] as const;
+const chatMessagesKey = (conversationId: string) => ["ai-chat-messages", conversationId] as const;
+
+function formatRelativeTime(iso: string | Date): string {
+  const date = typeof iso === "string" ? new Date(iso) : iso;
+  const diffMs = Date.now() - date.getTime();
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  return date.toLocaleDateString();
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return a.toDateString() === b.toDateString();
+}
+
 export default function ChatPage() {
   return <ChatPageImpl />;
 }
 
 function ChatPageImpl() {
-  const [conversations, setConversations] = useState(initialConversations);
-  const [activeId, setActiveId] = useState<string>("c1");
+  const queryClient = useQueryClient();
+  const listConversationsFn = useServerFn(listConversations);
+  const getMessagesFn = useServerFn(getConversationMessages);
+  const sendMessageFn = useServerFn(sendChatMessage);
+
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [mobileRailOpen, setMobileRailOpen] = useState(false);
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
 
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [pendingMessages, setPendingMessages] = useState<DisplayMessage[]>([]);
+  const [visuallyStopped, setVisuallyStopped] = useState(false);
   const [modelId, setModelId] = useState<string>(models[0]!.id);
   const [toneValue, setToneValue] = useState<string>(tones[0]!);
-  const genTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
+  const [renameTarget, setRenameTarget] = useState<ConversationRecord | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ConversationRecord | null>(null);
+
+  const { data: conversations = [] } = useQuery({
+    queryKey: CHAT_CONVERSATIONS_KEY,
+    queryFn: () => listConversationsFn(),
+  });
+
+  const messagesQuery = useQuery({
+    queryKey: activeId ? chatMessagesKey(activeId) : ["ai-chat-messages", "none"],
+    queryFn: () => getMessagesFn({ data: { conversationId: activeId! } }),
+    enabled: !!activeId,
+  });
+
+  const uiConversations: UIConversation[] = useMemo(
+    () =>
+      conversations.map((c) => {
+        const group: Group = pinnedIds.has(c.id)
+          ? "Pinned"
+          : isSameDay(new Date(c.updatedAt), new Date())
+            ? "Today"
+            : "Earlier";
+        return { ...c, group };
+      }),
+    [conversations, pinnedIds],
+  );
 
   const active = conversations.find((c) => c.id === activeId);
 
   const filtered = useMemo(
     () =>
-      conversations.filter((c) =>
-        c.title.toLowerCase().includes(search.toLowerCase()),
+      uiConversations.filter((c) =>
+        (c.title ?? "New chat").toLowerCase().includes(search.toLowerCase()),
       ),
-    [conversations, search],
+    [uiConversations, search],
   );
 
-  const groups: Conversation["group"][] = ["Pinned", "Today", "Earlier"];
+  const groups: Group[] = ["Pinned", "Today", "Earlier"];
 
-  function togglePin(c: Conversation) {
-    setConversations((prev) =>
-      prev.map((x) =>
-        x.id === c.id
-          ? { ...x, group: x.group === "Pinned" ? "Today" : "Pinned" }
-          : x,
-      ),
-    );
+  const persistedMessages: DisplayMessage[] = (messagesQuery.data ?? []).map((m: MessageRecord) => ({
+    id: m.id,
+    role: m.role as "user" | "assistant",
+    content: m.content,
+  }));
+  const messages: DisplayMessage[] = [...persistedMessages, ...pendingMessages];
+
+  const sendMutation = useMutation({
+    mutationFn: (vars: { content: string; conversationId?: string; tone?: string }) =>
+      sendMessageFn({ data: vars }),
+    onSuccess: async (result) => {
+      const wasNew = !activeId;
+      await queryClient.fetchQuery({
+        queryKey: chatMessagesKey(result.conversationId),
+        queryFn: () => getMessagesFn({ data: { conversationId: result.conversationId } }),
+      });
+      if (wasNew) setActiveId(result.conversationId);
+      queryClient.invalidateQueries({ queryKey: CHAT_CONVERSATIONS_KEY });
+      setPendingMessages([]);
+      setVisuallyStopped(false);
+    },
+    onError: () => {
+      toast.error("Couldn't send that message. Try again.");
+      setPendingMessages([]);
+      setVisuallyStopped(false);
+    },
+  });
+
+  const isGenerating = sendMutation.isPending && !visuallyStopped;
+
+  function togglePin(c: ConversationRecord) {
+    setPinnedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(c.id)) next.delete(c.id);
+      else next.add(c.id);
+      return next;
+    });
   }
 
   function confirmRename() {
     if (!renameTarget) return;
-    setConversations((prev) =>
-      prev.map((x) =>
-        x.id === renameTarget.id ? { ...x, title: renameValue || x.title } : x,
-      ),
+    queryClient.setQueryData(CHAT_CONVERSATIONS_KEY, (old: ConversationRecord[] | undefined) =>
+      (old ?? []).map((x) => (x.id === renameTarget.id ? { ...x, title: renameValue || x.title } : x)),
     );
     setRenameTarget(null);
   }
 
   function confirmDelete() {
     if (!deleteTarget) return;
-    setConversations((prev) => prev.filter((x) => x.id !== deleteTarget.id));
-    if (activeId === deleteTarget.id) setActiveId("");
+    queryClient.setQueryData(CHAT_CONVERSATIONS_KEY, (old: ConversationRecord[] | undefined) =>
+      (old ?? []).filter((x) => x.id !== deleteTarget.id),
+    );
+    if (activeId === deleteTarget.id) setActiveId(null);
     setDeleteTarget(null);
   }
 
   function handleSend() {
-    if (!draft.trim() || isGenerating) return;
-    const userMsg: Message = { id: `m${Date.now()}`, role: "user", content: draft.trim() };
-    setMessages((prev) => [...prev, userMsg]);
+    if (!draft.trim() || sendMutation.isPending) return;
+    const content = draft.trim();
+    setPendingMessages([{ id: `local-${Date.now()}`, role: "user", content }]);
+    setVisuallyStopped(false);
     setDraft("");
-    setIsGenerating(true);
-    genTimeout.current = setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `m${Date.now() + 1}`,
-          role: "assistant",
-          content:
-            "Here's a draft based on your brand voice and recent uploads. Let me know if you'd like it punchier, shorter, or restructured.",
-        },
-      ]);
-      setIsGenerating(false);
-    }, 1200);
+    sendMutation.mutate({
+      content,
+      ...(activeId ? { conversationId: activeId } : {}),
+      ...(toneValue ? { tone: toneValue } : {}),
+    });
   }
 
   function stopGeneration() {
-    if (genTimeout.current) clearTimeout(genTimeout.current);
-    setIsGenerating(false);
+    setVisuallyStopped(true);
+  }
+
+  function startNewChat() {
+    setActiveId(null);
+    setPendingMessages([]);
+    setVisuallyStopped(false);
+    setDraft("");
   }
 
   const activeModel = models.find((m) => m.id === modelId) ?? models[0]!;
@@ -218,7 +271,7 @@ function ChatPageImpl() {
         )}
       >
         <div className="flex items-center justify-between gap-2 border-b border-border-subtle p-3">
-          <Button size="sm" className="flex-1 justify-start gap-2">
+          <Button size="sm" className="flex-1 justify-start gap-2" onClick={startNewChat}>
             <Plus className="size-4" />
             New chat
           </Button>
@@ -264,6 +317,8 @@ function ChatPageImpl() {
                         type="button"
                         onClick={() => {
                           setActiveId(c.id);
+                          setPendingMessages([]);
+                          setVisuallyStopped(false);
                           setMobileRailOpen(false);
                         }}
                         className="min-w-0 flex-1 text-left"
@@ -273,14 +328,11 @@ function ChatPageImpl() {
                             <Pin className="size-3 shrink-0 text-accent-brand" />
                           ) : null}
                           <p className="truncate text-[13px] font-medium text-foreground">
-                            {c.title}
+                            {c.title ?? "New chat"}
                           </p>
                         </div>
-                        <p className="mt-0.5 truncate text-[11px] text-text-subtle">
-                          {c.snippet}
-                        </p>
                         <p className="mt-0.5 font-mono text-[10px] text-text-subtle">
-                          {c.timestamp}
+                          {formatRelativeTime(c.updatedAt)}
                         </p>
                       </button>
                       <DropdownMenu>
@@ -297,7 +349,7 @@ function ChatPageImpl() {
                           <DropdownMenuItem
                             onClick={() => {
                               setRenameTarget(c);
-                              setRenameValue(c.title);
+                              setRenameValue(c.title ?? "");
                             }}
                           >
                             <Pencil className="mr-2 size-3.5" /> Rename
@@ -546,7 +598,7 @@ function ChatPageImpl() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this chat?</AlertDialogTitle>
             <AlertDialogDescription>
-              "{deleteTarget?.title}" will be permanently removed. This can't be undone.
+              "{deleteTarget?.title ?? "New chat"}" will be permanently removed. This can't be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

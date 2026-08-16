@@ -1,4 +1,4 @@
-import { boolean, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -103,6 +103,114 @@ export const plannerItems = pgTable("planner_items", {
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
+
+export const aiFeatureValues = [
+  "chat",
+  "script-studio",
+  "image-studio",
+  "thumbnail-studio",
+] as const;
+
+export const aiGenerationStatusValues = ["pending", "completed", "failed"] as const;
+
+export const aiConversations = pgTable(
+  "ai_conversations",
+  {
+    id: text("id").primaryKey(),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    feature: text("feature").notNull(),
+    title: text("title"),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  },
+  (table) => [
+    index("ai_conversations_userId_idx").on(table.userId),
+    index("ai_conversations_createdAt_idx").on(table.createdAt),
+  ],
+);
+
+export const aiMessages = pgTable(
+  "ai_messages",
+  {
+    id: text("id").primaryKey(),
+    conversationId: text("conversationId")
+      .notNull()
+      .references(() => aiConversations.id, { onDelete: "cascade" }),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+    content: text("content").notNull(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+  },
+  (table) => [
+    index("ai_messages_conversationId_idx").on(table.conversationId),
+    index("ai_messages_userId_idx").on(table.userId),
+    index("ai_messages_createdAt_idx").on(table.createdAt),
+  ],
+);
+
+export const aiGenerations = pgTable(
+  "ai_generations",
+  {
+    id: text("id").primaryKey(),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    conversationId: text("conversationId").references(() => aiConversations.id, {
+      onDelete: "set null",
+    }),
+    feature: text("feature").notNull(),
+    operation: text("operation").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    status: text("status").notNull().default("pending"),
+    input: jsonb("input"),
+    output: jsonb("output"),
+    errorMessage: text("errorMessage"),
+    promptTokens: integer("promptTokens"),
+    completionTokens: integer("completionTokens"),
+    totalTokens: integer("totalTokens"),
+    costCents: integer("costCents"),
+    durationMs: integer("durationMs"),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+    completedAt: timestamp("completedAt"),
+  },
+  (table) => [
+    index("ai_generations_userId_idx").on(table.userId),
+    index("ai_generations_conversationId_idx").on(table.conversationId),
+    index("ai_generations_status_idx").on(table.status),
+    index("ai_generations_createdAt_idx").on(table.createdAt),
+  ],
+);
+
+export const aiAssets = pgTable(
+  "ai_assets",
+  {
+    id: text("id").primaryKey(),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    generationId: text("generationId")
+      .notNull()
+      .references(() => aiGenerations.id, { onDelete: "cascade" }),
+    assetType: text("assetType").notNull(),
+    url: text("url").notNull(),
+    variantIndex: integer("variantIndex").notNull().default(0),
+    width: integer("width"),
+    height: integer("height"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+  },
+  (table) => [
+    index("ai_assets_userId_idx").on(table.userId),
+    index("ai_assets_generationId_idx").on(table.generationId),
+    index("ai_assets_createdAt_idx").on(table.createdAt),
+  ],
+);
 
 export const userSettings = pgTable("user_settings", {
   userId: text("userId")

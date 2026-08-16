@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useMutation } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
 import {
   FileText,
   Save,
@@ -65,6 +68,8 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { generateScriptAction, rewriteScriptAction } from "@/lib/server/ai/script-studio";
+import type { ScriptOption } from "@/lib/ai/types";
 
 export const Route = createFileRoute("/_app/script-studio")({
   head: () => ({
@@ -81,27 +86,6 @@ export const Route = createFileRoute("/_app/script-studio")({
 const mockProjects = ["Q3 Growth Series", "Onboarding Rewrite", "Founder Story Arc"];
 
 type Section = { id: string; label: string; text: string };
-
-const initialSections: { a: Section[]; b: Section[]; c: Section[] } = {
-  a: [
-    { id: "hook", label: "Hook", text: "You're losing viewers in the first 8 seconds — here's the fix nobody talks about." },
-    { id: "intro", label: "Intro", text: "Quick intro: who this is for, and the one promise we're making in this video." },
-    { id: "body", label: "Body beats", text: "Beat 1: the mistake. Beat 2: the reframe. Beat 3: a concrete before/after example." },
-    { id: "cta", label: "CTA", text: "Subscribe if this helped, and check the next video for the full breakdown." },
-  ],
-  b: [
-    { id: "hook", label: "Hook", text: "I tried the advice every creator gives about hooks — most of it is wrong." },
-    { id: "intro", label: "Intro", text: "Set up the experiment: three hook styles, one video, real retention data." },
-    { id: "body", label: "Body beats", text: "Beat 1: curiosity hook results. Beat 2: shock hook results. Beat 3: direct-promise hook results." },
-    { id: "cta", label: "CTA", text: "Comment which hook style you use — I'll reply with your retention estimate." },
-  ],
-  c: [
-    { id: "hook", label: "Hook", text: "This 12-minute structure is why our watch time doubled last month." },
-    { id: "intro", label: "Intro", text: "Short credibility line, then a one-sentence roadmap of the video." },
-    { id: "body", label: "Body beats", text: "Beat 1: the structure. Beat 2: why it works psychologically. Beat 3: a template you can copy." },
-    { id: "cta", label: "CTA", text: "Grab the template linked below and tell us how it performs." },
-  ],
-};
 
 const versions = [
   { id: "v4", label: "v4", timestamp: "Today, 2:41 PM", author: "You", current: true },
@@ -132,12 +116,15 @@ function ScriptStudioPage() {
   const [creativity, setCreativity] = useState([55]);
   const [multiOption, setMultiOption] = useState(true);
 
-  const [generating, setGenerating] = useState(false);
+  const [scriptOptions, setScriptOptions] = useState<ScriptOption[]>([]);
   const [hasGenerated, setHasGenerated] = useState(false);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
-  const [sections, setSections] = useState<Section[]>(initialSections.a);
+  const [sections, setSections] = useState<Section[]>([]);
   const [processingAction, setProcessingAction] = useState<string | null>(null);
   const [tonePickerOpen, setTonePickerOpen] = useState(false);
+
+  const generateScriptFn = useServerFn(generateScriptAction);
+  const rewriteScriptFn = useServerFn(rewriteScriptAction);
 
   const handlePlatformChange = (id: typeof platformId) => {
     setPlatformId(id);
@@ -150,26 +137,85 @@ function ScriptStudioPage() {
     return { contentTypes: platform.contentTypes, durations: platform.durations };
   }
 
-  const handleGenerate = () => {
-    setGenerating(true);
-    window.setTimeout(() => {
-      setGenerating(false);
+  const generateMutation = useMutation({
+    mutationFn: () =>
+      generateScriptFn({
+        data: {
+          topic,
+          platform: platform.label,
+          contentType,
+          duration,
+          tone,
+          language,
+          creativity: creativity[0]! / 100,
+          multiOption,
+          ...(audience.trim() ? { audience: audience.trim() } : {}),
+        },
+      }),
+    onSuccess: (result) => {
+      setScriptOptions(result.options);
       setHasGenerated(true);
-    }, 1400);
+      setSelectedOption(null);
+      setSections([]);
+    },
+    onError: () => toast.error("Couldn't generate a script. Try again."),
+  });
+
+  const handleGenerate = () => {
+    generateMutation.mutate();
   };
 
-  const handleSelectOption = (key: "a" | "b" | "c") => {
+  const handleSelectOption = (key: string) => {
+    const option = scriptOptions.find((o) => o.key === key);
+    if (!option) return;
     setSelectedOption(key);
-    setSections(initialSections[key]);
+    setSections(option.sections);
   };
 
   const updateSection = (id: string, text: string) => {
     setSections((prev) => prev.map((s) => (s.id === id ? { ...s, text } : s)));
   };
 
+  const rewriteMutation = useMutation({
+    mutationFn: async ({ key, targets }: { key: string; action: string; targets: Section[] }) => {
+      const results = await Promise.all(
+        targets.map((s) => rewriteScriptFn({ data: { sectionText: s.text, action: rewriteActionFor(key) } })),
+      );
+      return targets.map((s, i) => ({ id: s.id, text: results[i]!.text }));
+    },
+    onSuccess: (updates) => {
+      setSections((prev) => prev.map((s) => {
+        const update = updates.find((u) => u.id === s.id);
+        return update ? { ...s, text: update.text } : s;
+      }));
+    },
+    onError: () => toast.error("Couldn't rewrite that section. Try again."),
+    onSettled: () => setProcessingAction(null),
+  });
+
+  function rewriteActionFor(key: string): string {
+    if (key.startsWith("section-")) return "rewrite";
+    if (key.startsWith("tone-")) return key;
+    return key;
+  }
+
   const runAction = (key: string) => {
     setProcessingAction(key);
-    window.setTimeout(() => setProcessingAction(null), 1100);
+    if (key.startsWith("section-")) {
+      const sectionId = key.slice("section-".length);
+      const target = sections.find((s) => s.id === sectionId);
+      if (!target) {
+        setProcessingAction(null);
+        return;
+      }
+      rewriteMutation.mutate({ key, action: rewriteActionFor(key), targets: [target] });
+      return;
+    }
+    if (sections.length === 0) {
+      setProcessingAction(null);
+      return;
+    }
+    rewriteMutation.mutate({ key, action: rewriteActionFor(key), targets: sections });
   };
 
   const fullText = sections.map((s) => s.text).join(" ");
@@ -309,10 +355,10 @@ function ScriptStudioPage() {
                 <Switch checked={multiOption} onCheckedChange={setMultiOption} />
               </div>
 
-              {generating ? (
+              {generateMutation.isPending ? (
                 <GeneratingState label="Drafting script options" />
               ) : (
-                <Button className="w-full" onClick={handleGenerate}>
+                <Button className="w-full" onClick={handleGenerate} disabled={!topic.trim()}>
                   <Sparkles className="size-3.5" />
                   Generate
                 </Button>
@@ -326,7 +372,7 @@ function ScriptStudioPage() {
 
         {/* MAIN COLUMN */}
         <div className="space-y-6">
-          {!hasGenerated && !generating ? (
+          {!hasGenerated && !generateMutation.isPending ? (
             <EmptyState
               icon={FileText}
               title="No script yet"
@@ -334,33 +380,33 @@ function ScriptStudioPage() {
             />
           ) : null}
 
-          {generating ? (
+          {generateMutation.isPending ? (
             <Panel title="Generating options">
               <GeneratingState label="Writing hook, beats and CTA" />
             </Panel>
           ) : null}
 
-          {hasGenerated && !generating ? (
+          {hasGenerated && !generateMutation.isPending ? (
             <>
               <section>
                 <SectionLabel>Generated options</SectionLabel>
                 <div className="grid gap-4 md:grid-cols-3">
-                  {(["a", "b", "c"] as const).map((key, i) => (
+                  {scriptOptions.map((option) => (
                     <OptionCard
-                      key={key}
-                      label={`Option ${key.toUpperCase()}`}
-                      title={initialSections[key][0]?.text ?? ""}
-                      recommended={i === 0}
-                      selected={selectedOption === key}
-                      onSelect={() => handleSelectOption(key)}
+                      key={option.key}
+                      label={option.label}
+                      title={option.sections[0]?.text ?? ""}
+                      recommended={option.recommended}
+                      selected={selectedOption === option.key}
+                      onSelect={() => handleSelectOption(option.key)}
                       meta={`${platform.label} · ${duration}`}
                     >
                       <p className="mt-2 line-clamp-3 text-[12px] leading-relaxed text-text-muted">
-                        {initialSections[key][2]?.text}
+                        {option.sections[2]?.text}
                       </p>
-                      {i === 0 ? (
+                      {option.rationale ? (
                         <p className="mt-3 text-[11px] leading-relaxed text-accent-brand">
-                          Strongest hook-to-payoff ratio for this audience.
+                          {option.rationale}
                         </p>
                       ) : null}
                     </OptionCard>
