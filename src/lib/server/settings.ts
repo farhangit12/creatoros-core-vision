@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { auth } from "@/lib/auth";
 import { user, userSettings } from "@/db/schema";
+import { tones } from "@/lib/creator-data";
 
 export type UserProfileRecord = typeof user.$inferSelect;
 export type UserSettingsRecord = typeof userSettings.$inferSelect;
@@ -36,9 +37,10 @@ const updateSettingsSchema = z.object({
   notifyAiUpdates: z.boolean().optional(),
   notifyCreditWarnings: z.boolean().optional(),
   notifyPlannerReminders: z.boolean().optional(),
-  defaultAiTone: z.string().trim().min(1).max(120).optional(),
+  defaultAiTone: z.enum(tones as [string, ...string[]]).optional(),
   autosaveDrafts: z.boolean().optional(),
   keyboardFirstMode: z.boolean().optional(),
+  theme: z.enum(["dark", "light", "system"]).optional(),
 });
 
 async function loadOrCreateSettings(userId: string): Promise<UserSettingsRecord> {

@@ -48,10 +48,6 @@ export function AuthLayout({
             {footer}
           </p>
         ) : null}
-
-        <p className="mt-10 text-center font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">
-          Prototype · authentication is not connected
-        </p>
       </div>
     </div>
   );

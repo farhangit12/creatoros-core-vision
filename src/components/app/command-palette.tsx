@@ -2,7 +2,6 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   ArrowRight,
-  Clock3,
   CornerDownLeft,
   Plus,
   Search,
@@ -13,17 +12,10 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  CommandSeparator,
   Command,
 } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { navigation } from "@/lib/navigation";
-
-const recents = [
-  "Q3 launch script",
-  "Thumbnail — episode 42",
-  "Brand voice notes",
-];
 
 export function CommandPalette({
   open,
@@ -64,22 +56,6 @@ export function CommandPalette({
             </p>
           </div>
         </CommandEmpty>
-
-        {query.length === 0 ? (
-          <CommandGroup heading="Recent">
-            {recents.map((r) => (
-              <CommandItem key={r} value={r} disabled>
-                <Clock3 className="text-text-subtle" />
-                <span>{r}</span>
-                <span className="ml-auto font-mono text-[10px] uppercase tracking-widest text-text-subtle">
-                  later phase
-                </span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        ) : null}
-
-        <CommandSeparator />
 
         <CommandGroup heading="Actions">
           <CommandItem value="create project" onSelect={() => go("/projects")}>

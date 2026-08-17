@@ -97,22 +97,14 @@ export const platforms: Platform[] = [
   },
 ];
 
-export const creditSummary = {
-  plan: "Pro",
-  allowance: 2000,
-  used: 820,
-  remaining: 1180,
-  renewsOn: "12 September",
-  lowThreshold: 400,
-};
-
 export const tones = [
+  "Direct & Dry",
+  "Professional",
   "Conversational",
-  "Authoritative",
-  "Playful",
-  "Cinematic",
-  "Analytical",
-  "Inspiring",
+  "Friendly",
+  "Bold & Energetic",
+  "Storytelling",
+  "Minimal",
 ];
 
 export const languages = ["English (US)", "English (UK)", "Spanish", "German", "Hindi"];

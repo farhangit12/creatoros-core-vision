@@ -15,17 +15,14 @@ import {
   Upload,
   Wand2,
   PlayCircle,
-  Zap,
 } from "lucide-react";
 import {
   EmptyState,
-  PhaseBadge,
   SectionLabel,
 } from "@/components/app/primitives";
 import { StatusPill, WireLine, type StateTone } from "@/components/app/studio-kit";
-import { creditSummary } from "@/lib/creator-data";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
+import { useSession } from "@/lib/auth-client";
 import { getDashboardSummary } from "@/lib/server/dashboard";
 
 export const Route = createFileRoute("/_app/dashboard")({
@@ -96,33 +93,29 @@ const statusTone: Record<string, StateTone> = {
 };
 
 function DashboardPage() {
+  const { data: session } = useSession();
+  const firstName = session?.user.name?.trim().split(/\s+/)[0];
+
   const getDashboardSummaryFn = useServerFn(getDashboardSummary);
   const { data: summary, isLoading } = useQuery({
     queryKey: ["dashboard-summary"],
     queryFn: () => getDashboardSummaryFn(),
   });
 
-  const usedPct = Math.round(
-    (creditSummary.used / creditSummary.allowance) * 100,
-  );
-
   const stats = [
     { label: "Projects", value: isLoading ? "…" : String(summary?.projectsCount ?? 0), note: "total" },
-    { label: "Generations", value: "0", note: "this cycle" },
     { label: "Scheduled", value: isLoading ? "…" : String(summary?.scheduledCount ?? 0), note: "next 30 days" },
-    { label: "Files", value: "0", note: "in the drive" },
   ];
 
   return (
     <div className="space-y-14">
       <section className="relative">
-        <p className="label-eyebrow">Tuesday · 21:04 · {creditSummary.plan} plan</p>
+        <p className="label-eyebrow">Workspace</p>
         <h1 className="mt-4 text-display max-w-3xl text-foreground">
-          Good evening, Alex.
+          {firstName ? `Good to see you, ${firstName}.` : "Good to see you."}
         </h1>
         <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-text-muted">
-          Your creative workspace is ready. Nothing is scheduled for tonight —
-          a good window for deep work.
+          Your creative workspace is ready.
         </p>
         <div className="mt-7 flex flex-wrap items-center gap-3">
           <Button asChild size="sm">
@@ -137,7 +130,7 @@ function DashboardPage() {
       </section>
 
       <section>
-        <SectionLabel aside={<PhaseBadge />}>Quick actions</SectionLabel>
+        <SectionLabel>Quick actions</SectionLabel>
         <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
           <Link
             to="/projects"
@@ -308,34 +301,12 @@ function DashboardPage() {
         </div>
 
         <div>
-          <SectionLabel
-            aside={
-              <StatusPill tone="accent">
-                <Zap className="size-3" />
-                {creditSummary.plan}
-              </StatusPill>
-            }
-          >
-            AI credits
-          </SectionLabel>
-          <div className="rounded-2xl border border-border bg-surface p-7">
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className="font-mono text-[28px] leading-none text-foreground">
-                  {creditSummary.remaining.toLocaleString()}
-                </p>
-                <p className="mt-2 text-[13px] text-text-subtle">
-                  credits remaining of{" "}
-                  {creditSummary.allowance.toLocaleString()}
-                </p>
-              </div>
-              <p className="font-mono text-[11px] text-text-subtle">
-                {usedPct}% used
-              </p>
-            </div>
-            <Progress value={usedPct} className="mt-5 h-1.5" />
-            <p className="mt-4 text-[12px] text-text-subtle">
-              Renews on {creditSummary.renewsOn}.
+          <SectionLabel>AI credits</SectionLabel>
+          <div className="rounded-2xl border border-dashed border-border p-7">
+            <p className="text-[14px] text-foreground">Not available yet</p>
+            <p className="mt-2 max-w-sm text-[13px] leading-relaxed text-text-subtle">
+              Credit balance and plan details will show here once billing is
+              connected.
             </p>
             <div className="mt-6 flex flex-wrap gap-2">
               <Button asChild variant="outline" size="sm">
@@ -350,8 +321,8 @@ function DashboardPage() {
       </section>
 
       <section>
-        <SectionLabel aside={<PhaseBadge />}>Creator stats</SectionLabel>
-        <div className="grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+        <SectionLabel>Workspace stats</SectionLabel>
+        <div className="grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-2">
           {stats.map((s) => (
             <div key={s.label} className="bg-surface p-6">
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">
@@ -364,14 +335,6 @@ function DashboardPage() {
             </div>
           ))}
         </div>
-      </section>
-
-      <section className="flex items-center gap-3 border-t border-border-subtle pt-8 text-[13px] text-text-subtle">
-        <Sparkles className="size-4 shrink-0 text-accent-brand" />
-        <p>
-          This is a design prototype. No data is stored and no AI models are
-          connected.
-        </p>
       </section>
     </div>
   );

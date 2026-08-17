@@ -1,10 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Loader2, MailCheck } from "lucide-react";
+import { AlertCircle, Loader2, MailCheck } from "lucide-react";
 import { AuthLayout } from "@/components/auth/auth-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { authClient } from "@/lib/auth-client";
 
 export const Route = createFileRoute("/forgot-password")({
   head: () => ({
@@ -26,6 +27,31 @@ export const Route = createFileRoute("/forgot-password")({
 
 function ForgotPasswordPage() {
   const [state, setState] = useState<"idle" | "loading" | "sent">("idle");
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const emailInvalid = email.length > 0 && !email.includes("@");
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!email || emailInvalid) {
+      setError("Enter a valid email address to continue.");
+      return;
+    }
+    setState("loading");
+    const { error: requestError } = await authClient.requestPasswordReset({
+      email,
+      redirectTo: "/reset-password",
+    });
+    if (requestError) {
+      setState("idle");
+      setError(requestError.message ?? "Couldn't send the reset link. Try again.");
+      return;
+    }
+    // Same success state regardless of whether the account exists — never
+    // reveal account existence through this flow.
+    setState("sent");
+  };
 
   return (
     <AuthLayout
@@ -44,31 +70,36 @@ function ForgotPasswordPage() {
             Check your inbox
           </p>
           <p className="mt-1.5 text-[13px] leading-relaxed text-text-muted">
-            If an account exists, a reset link is on its way. The link expires in
-            30 minutes.
+            If an account exists for {email}, a reset link is on its way. The
+            link expires in 1 hour.
           </p>
-          <Button asChild variant="outline" size="sm" className="mt-5">
-            <Link to="/reset-password">Open reset screen</Link>
-          </Button>
         </div>
       ) : (
-        <form
-          className="space-y-5"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setState("loading");
-            window.setTimeout(() => setState("sent"), 900);
-          }}
-        >
+        <form className="space-y-5" onSubmit={submit} noValidate>
+          {error ? (
+            <div
+              role="alert"
+              className="flex gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 text-[13px] leading-relaxed text-foreground"
+            >
+              <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
+              <span>{error}</span>
+            </div>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
               id="email"
               type="email"
+              autoComplete="email"
               className="h-10"
               placeholder="you@studio.com"
-              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              aria-invalid={emailInvalid}
             />
+            {emailInvalid ? (
+              <p className="text-xs text-danger">Enter a valid email address.</p>
+            ) : null}
           </div>
           <Button
             type="submit"

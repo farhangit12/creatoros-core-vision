@@ -3,11 +3,21 @@ import { PanelLeftClose, PanelLeftOpen, LogOut, ChevronRight } from "lucide-reac
 import { navigation } from "@/lib/navigation";
 import { Monogram, Wordmark } from "@/components/brand/logo";
 import { cn } from "@/lib/utils";
+import { useSession } from "@/lib/auth-client";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+
+function initialsFor(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return parts
+    .slice(0, 2)
+    .map((p) => p[0]!.toUpperCase())
+    .join("");
+}
 
 export function SidebarNav({
   collapsed,
@@ -22,6 +32,8 @@ export function SidebarNav({
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isCollapsed = collapsed && !mobile;
+  const { data: session } = useSession();
+  const user = session?.user;
 
   return (
     <div
@@ -168,15 +180,15 @@ export function SidebarNav({
           )}
         >
           <span className="grid size-7 shrink-0 place-items-center rounded-md bg-surface-3 font-mono text-[11px] text-foreground">
-            AR
+            {user ? initialsFor(user.name) : "…"}
           </span>
           {!isCollapsed && (
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13px] text-foreground">
-                Alex Rivera
+                {user?.name ?? "Loading…"}
               </span>
               <span className="block truncate text-[11px] text-text-subtle">
-                Pro plan
+                {user?.email ?? ""}
               </span>
             </span>
           )}

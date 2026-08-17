@@ -1,17 +1,42 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { SidebarNav } from "@/components/app/app-sidebar";
 import { Topbar } from "@/components/app/topbar";
 import { CommandPalette } from "@/components/app/command-palette";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { getUserSettings } from "@/lib/server/settings";
+import { applyTheme, type ThemeSetting } from "@/lib/theme";
+
+const SETTINGS_QUERY_KEY = ["user-settings"] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
 
+  const getUserSettingsFn = useServerFn(getUserSettings);
+  const { data: settings } = useQuery({
+    queryKey: SETTINGS_QUERY_KEY,
+    queryFn: () => getUserSettingsFn(),
+  });
+
   useEffect(() => {
+    if (!settings) return;
+    applyTheme(settings.theme as ThemeSetting);
+    if (settings.theme !== "system") return;
+    const media = window.matchMedia("(prefers-color-scheme: light)");
+    const onChange = () => applyTheme("system");
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, [settings?.theme]);
+
+  const keyboardFirstMode = settings?.keyboardFirstMode ?? true;
+
+  useEffect(() => {
+    if (!keyboardFirstMode) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
@@ -20,7 +45,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [keyboardFirstMode]);
 
   return (
     <TooltipProvider delayDuration={200}>

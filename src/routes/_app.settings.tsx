@@ -1,17 +1,27 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Check, Moon, Sun } from "lucide-react";
+import { Check, Laptop, Loader2, Moon, Sun } from "lucide-react";
 import { PageHeader } from "@/components/app/primitives";
 import { WireLine } from "@/components/app/studio-kit";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { tones } from "@/lib/creator-data";
 import { getUserProfile, getUserSettings, updateUserProfile, updateUserSettings } from "@/lib/server/settings";
+import { authClient, useSession } from "@/lib/auth-client";
+import { applyTheme, type ThemeSetting } from "@/lib/theme";
 
 export const Route = createFileRoute("/_app/settings")({
   head: () => ({
@@ -67,6 +77,119 @@ function Row({
   );
 }
 
+const SESSIONS_QUERY_KEY = ["auth-sessions"] as const;
+
+function describeUserAgent(ua: string | null | undefined): string {
+  if (!ua) return "Unknown device";
+  const os = /Windows/i.test(ua)
+    ? "Windows"
+    : /Macintosh|Mac OS X/i.test(ua)
+      ? "macOS"
+      : /Android/i.test(ua)
+        ? "Android"
+        : /iPhone|iPad|iPod/i.test(ua)
+          ? "iOS"
+          : /Linux/i.test(ua)
+            ? "Linux"
+            : "an unknown OS";
+  const browser = /Edg\//i.test(ua)
+    ? "Edge"
+    : /Chrome\//i.test(ua)
+      ? "Chrome"
+      : /Firefox\//i.test(ua)
+        ? "Firefox"
+        : /Safari\//i.test(ua)
+          ? "Safari"
+          : "an unknown browser";
+  return `${browser} on ${os}`;
+}
+
+function ActiveSessionsSection() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { data: currentSession } = useSession();
+  const currentSessionId = currentSession?.session?.id;
+
+  const { data: sessions = [], isLoading } = useQuery({
+    queryKey: SESSIONS_QUERY_KEY,
+    queryFn: async () => {
+      const { data, error } = await authClient.listSessions();
+      if (error) throw new Error(error.message ?? "Couldn't load sessions.");
+      return data ?? [];
+    },
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await authClient.revokeOtherSessions();
+      if (error) throw new Error(error.message ?? "Couldn't revoke other sessions.");
+    },
+    onSuccess: async () => {
+      toast.success("Other sessions revoked");
+      queryClient.invalidateQueries({ queryKey: SESSIONS_QUERY_KEY });
+      const { data } = await authClient.getSession();
+      if (!data) navigate({ to: "/login" });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Couldn't revoke other sessions.");
+    },
+  });
+
+  const otherCount = sessions.filter((s) => s.id !== currentSessionId).length;
+
+  return (
+    <div className="border-b border-border-subtle px-5 py-5 last:border-0">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-[14px] text-foreground">Active sessions</p>
+          <p className="mt-1 text-[13px] leading-relaxed text-text-subtle">
+            Devices currently signed in to your account.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => revokeMutation.mutate()}
+          disabled={isLoading || otherCount === 0 || revokeMutation.isPending}
+        >
+          {revokeMutation.isPending ? (
+            <>
+              <Loader2 className="size-3.5 animate-spin" /> Revoking…
+            </>
+          ) : (
+            "Revoke others"
+          )}
+        </Button>
+      </div>
+      <div className="mt-4 space-y-2">
+        {isLoading ? (
+          <WireLine className="h-10 w-full" />
+        ) : (
+          sessions.map((s) => (
+            <div
+              key={s.id}
+              className="flex items-center justify-between gap-3 rounded-lg border border-border-subtle bg-surface-2 px-3 py-2.5"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-[13px] text-foreground">
+                  {describeUserAgent(s.userAgent)}
+                  {s.id === currentSessionId ? (
+                    <span className="ml-2 text-[11px] text-accent-brand">This device</span>
+                  ) : null}
+                </p>
+                <p className="mt-0.5 text-[12px] text-text-subtle">
+                  {s.ipAddress ? `${s.ipAddress} · ` : ""}
+                  Last active {new Date(s.updatedAt).toLocaleString()}
+                </p>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SettingsPage() {
   const queryClient = useQueryClient();
   const getUserProfileFn = useServerFn(getUserProfile);
@@ -91,9 +214,10 @@ function SettingsPage() {
   const [notifyAiUpdates, setNotifyAiUpdates] = useState(true);
   const [notifyCreditWarnings, setNotifyCreditWarnings] = useState(true);
   const [notifyPlannerReminders, setNotifyPlannerReminders] = useState(true);
-  const [defaultAiTone, setDefaultAiTone] = useState("Direct, dry");
+  const [defaultAiTone, setDefaultAiTone] = useState<string>(tones[0]!);
   const [autosaveDrafts, setAutosaveDrafts] = useState(true);
   const [keyboardFirstMode, setKeyboardFirstMode] = useState(true);
+  const [theme, setTheme] = useState<ThemeSetting>("dark");
 
   function syncFromServer() {
     if (profile) setDisplayName(profile.name);
@@ -102,13 +226,21 @@ function SettingsPage() {
       setNotifyAiUpdates(settings.notifyAiUpdates);
       setNotifyCreditWarnings(settings.notifyCreditWarnings);
       setNotifyPlannerReminders(settings.notifyPlannerReminders);
-      setDefaultAiTone(settings.defaultAiTone);
+      setDefaultAiTone(tones.includes(settings.defaultAiTone) ? settings.defaultAiTone : tones[0]!);
       setAutosaveDrafts(settings.autosaveDrafts);
       setKeyboardFirstMode(settings.keyboardFirstMode);
+      const serverTheme = settings.theme as ThemeSetting;
+      setTheme(serverTheme);
+      applyTheme(serverTheme);
     }
   }
 
   useEffect(syncFromServer, [profile?.id, settings?.userId]);
+
+  function selectTheme(next: ThemeSetting) {
+    setTheme(next);
+    applyTheme(next);
+  }
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -120,9 +252,10 @@ function SettingsPage() {
             notifyAiUpdates,
             notifyCreditWarnings,
             notifyPlannerReminders,
-            defaultAiTone: defaultAiTone.trim() || undefined,
+            defaultAiTone,
             autosaveDrafts,
             keyboardFirstMode,
+            theme,
           },
         }),
       ]);
@@ -140,7 +273,7 @@ function SettingsPage() {
       <PageHeader
         eyebrow="Account"
         title="Settings"
-        description="Preferences apply to this workspace. Nothing here is persisted in the prototype."
+        description="Preferences apply to this workspace."
       />
 
       <div className="grid gap-10 lg:grid-cols-[200px_minmax(0,1fr)]">
@@ -189,13 +322,6 @@ function SettingsPage() {
                     }
                   />
                   <Row
-                    title="Workspace language"
-                    description="Interface language for CreatorOS."
-                    control={
-                      <Input defaultValue="English (UK)" className="h-9 w-56" disabled />
-                    }
-                  />
-                  <Row
                     title="Delete account"
                     description="Permanently remove your account and all data."
                     control={
@@ -214,24 +340,38 @@ function SettingsPage() {
               {section === "Appearance" ? (
                 <div className="p-5">
                   <p className="label-eyebrow">Theme</p>
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                    <div className="relative rounded-xl border border-accent-brand/50 bg-surface-2 p-5">
-                      <span className="absolute right-4 top-4 grid size-5 place-items-center rounded-full bg-accent-brand text-primary-foreground">
-                        <Check className="size-3" />
-                      </span>
-                      <Moon className="size-4 text-accent-brand" />
-                      <p className="mt-4 text-[14px] text-foreground">Dark</p>
-                      <p className="mt-1 text-[13px] text-text-subtle">
-                        The CreatorOS default environment.
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-dashed border-border p-5 opacity-60">
-                      <Sun className="size-4 text-text-subtle" />
-                      <p className="mt-4 text-[14px] text-foreground">Light</p>
-                      <p className="mt-1 text-[13px] text-text-subtle">
-                        Token architecture supports it — shipping in a later phase.
-                      </p>
-                    </div>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                    {(
+                      [
+                        { value: "dark", label: "Dark", description: "The CreatorOS default environment.", Icon: Moon },
+                        { value: "light", label: "Light", description: "A bright workspace for daytime use.", Icon: Sun },
+                        { value: "system", label: "System", description: "Follows your device's appearance setting.", Icon: Laptop },
+                      ] as const
+                    ).map(({ value, label, description, Icon }) => {
+                      const selected = theme === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => selectTheme(value)}
+                          className={cn(
+                            "relative rounded-xl border p-5 text-left transition-colors duration-150",
+                            selected
+                              ? "border-accent-brand/50 bg-surface-2"
+                              : "border-border hover:bg-surface-2/60",
+                          )}
+                        >
+                          {selected ? (
+                            <span className="absolute right-4 top-4 grid size-5 place-items-center rounded-full bg-accent-brand text-primary-foreground">
+                              <Check className="size-3" />
+                            </span>
+                          ) : null}
+                          <Icon className={cn("size-4", selected ? "text-accent-brand" : "text-text-subtle")} />
+                          <p className="mt-4 text-[14px] text-foreground">{label}</p>
+                          <p className="mt-1 text-[13px] text-text-subtle">{description}</p>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ) : null}
@@ -277,15 +417,7 @@ function SettingsPage() {
                       </Button>
                     }
                   />
-                  <Row
-                    title="Active sessions"
-                    description="This browser · London · active now"
-                    control={
-                      <Button size="sm" variant="outline">
-                        Revoke others
-                      </Button>
-                    }
-                  />
+                  <ActiveSessionsSection />
                 </>
               ) : null}
 
@@ -293,13 +425,20 @@ function SettingsPage() {
                 <>
                   <Row
                     title="Default AI tone"
-                    description="Applied to new generations across studios."
+                    description="Applied to new generations across studios when you don't pick a tone explicitly."
                     control={
-                      <Input
-                        value={defaultAiTone}
-                        onChange={(e) => setDefaultAiTone(e.target.value)}
-                        className="h-9 w-56"
-                      />
+                      <Select value={defaultAiTone} onValueChange={setDefaultAiTone}>
+                        <SelectTrigger className="h-9 w-56">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {tones.map((t) => (
+                            <SelectItem key={t} value={t}>
+                              {t}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     }
                   />
                   <Row

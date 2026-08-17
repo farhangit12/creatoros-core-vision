@@ -4,13 +4,23 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { Check, KeyRound, Loader2, LogOut, ShieldCheck } from "lucide-react";
+import { AlertCircle, Check, KeyRound, Loader2, LogOut, ShieldCheck } from "lucide-react";
 import { PageHeader, SectionLabel } from "@/components/app/primitives";
 import { WireLine } from "@/components/app/studio-kit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { authClient } from "@/lib/auth-client";
 import { getUserProfile, updateUserProfile } from "@/lib/server/settings";
 
 export const Route = createFileRoute("/_app/profile")({
@@ -32,6 +42,133 @@ export const Route = createFileRoute("/_app/profile")({
 });
 
 const PROFILE_QUERY_KEY = ["user-profile"] as const;
+
+function ChangePasswordDialog() {
+  const [open, setOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const mismatch = confirm.length > 0 && confirm !== newPassword;
+
+  const reset = () => {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirm("");
+    setError(null);
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!currentPassword || !newPassword || newPassword.length < 8) {
+      setError("Enter your current password and a new password of at least 8 characters.");
+      return;
+    }
+    if (mismatch) {
+      setError("New passwords don't match.");
+      return;
+    }
+    setSubmitting(true);
+    const { error: changeError } = await authClient.changePassword({
+      currentPassword,
+      newPassword,
+    });
+    setSubmitting(false);
+    if (changeError) {
+      setError(changeError.message ?? "Couldn't change your password. Try again.");
+      return;
+    }
+    toast.success("Password changed");
+    reset();
+    setOpen(false);
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) reset();
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          Change
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Change password</DialogTitle>
+          <DialogDescription>
+            Enter your current password and choose a new one.
+          </DialogDescription>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={submit} noValidate>
+          {error ? (
+            <div
+              role="alert"
+              className="flex gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 text-[13px] leading-relaxed text-foreground"
+            >
+              <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
+              <span>{error}</span>
+            </div>
+          ) : null}
+          <div className="space-y-2">
+            <Label htmlFor="current-password">Current password</Label>
+            <Input
+              id="current-password"
+              type="password"
+              autoComplete="current-password"
+              className="h-10"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="new-password">New password</Label>
+            <Input
+              id="new-password"
+              type="password"
+              autoComplete="new-password"
+              className="h-10"
+              placeholder="At least 8 characters"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="confirm-new-password">Confirm new password</Label>
+            <Input
+              id="confirm-new-password"
+              type="password"
+              autoComplete="new-password"
+              className="h-10"
+              value={confirm}
+              aria-invalid={mismatch}
+              onChange={(e) => setConfirm(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" /> Changing…
+                </>
+              ) : (
+                "Change password"
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function initialsFor(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -108,7 +245,7 @@ function ProfilePage() {
       <PageHeader
         eyebrow="Account"
         title="Profile"
-        description="How you appear across CreatorOS. Changes are local to this prototype."
+        description="How you appear across CreatorOS."
         actions={
           editing ? (
             <>
@@ -174,7 +311,7 @@ function ProfilePage() {
               {displayName}
             </p>
             <p className="mt-1 text-[13px] text-text-muted">
-              {profile?.email} · Pro plan · Joined {joined}
+              {profile?.email} · Joined {joined}
             </p>
           </div>
           <Button variant="outline" size="sm" disabled={!editing}>
@@ -263,13 +400,11 @@ function ProfilePage() {
               <span className="min-w-0">
                 <span className="block text-[14px] text-foreground">Password</span>
                 <span className="text-[13px] text-text-subtle">
-                  Last changed 4 months ago
+                  Change the password for this account
                 </span>
               </span>
             </span>
-            <Button asChild variant="outline" size="sm">
-              <Link to="/reset-password">Change</Link>
-            </Button>
+            <ChangePasswordDialog />
           </li>
           <li className="flex items-center justify-between gap-4 px-5 py-4">
             <span className="flex min-w-0 items-center gap-3">

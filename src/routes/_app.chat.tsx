@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -71,6 +71,9 @@ import {
   type ConversationRecord,
   type MessageRecord,
 } from "@/lib/server/ai/chat";
+import { getUserSettings } from "@/lib/server/settings";
+
+const SETTINGS_QUERY_KEY = ["user-settings"] as const;
 
 export const Route = createFileRoute("/_app/chat")({
   head: () => ({
@@ -127,6 +130,7 @@ function ChatPageImpl() {
   const listConversationsFn = useServerFn(listConversations);
   const getMessagesFn = useServerFn(getConversationMessages);
   const sendMessageFn = useServerFn(sendChatMessage);
+  const getUserSettingsFn = useServerFn(getUserSettings);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -138,6 +142,16 @@ function ChatPageImpl() {
   const [visuallyStopped, setVisuallyStopped] = useState(false);
   const [modelId, setModelId] = useState<string>(models[0]!.id);
   const [toneValue, setToneValue] = useState<string>(tones[0]!);
+
+  const { data: settings } = useQuery({
+    queryKey: SETTINGS_QUERY_KEY,
+    queryFn: () => getUserSettingsFn(),
+  });
+  useEffect(() => {
+    if (settings?.defaultAiTone && tones.includes(settings.defaultAiTone)) {
+      setToneValue(settings.defaultAiTone);
+    }
+  }, [settings?.userId]);
 
   const [renameTarget, setRenameTarget] = useState<ConversationRecord | null>(null);
   const [renameValue, setRenameValue] = useState("");

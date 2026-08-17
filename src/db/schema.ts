@@ -223,5 +223,6 @@ export const userSettings = pgTable("user_settings", {
   defaultAiTone: text("defaultAiTone").notNull().default("Direct, dry"),
   autosaveDrafts: boolean("autosaveDrafts").notNull().default(true),
   keyboardFirstMode: boolean("keyboardFirstMode").notNull().default(true),
+  theme: text("theme").notNull().default("dark"),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });

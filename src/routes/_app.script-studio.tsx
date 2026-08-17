@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
@@ -69,6 +69,9 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { generateScriptAction, rewriteScriptAction } from "@/lib/server/ai/script-studio";
+import { getUserSettings } from "@/lib/server/settings";
+
+const SETTINGS_QUERY_KEY = ["user-settings"] as const;
 import type { ScriptOption } from "@/lib/ai/types";
 
 export const Route = createFileRoute("/_app/script-studio")({
@@ -113,6 +116,17 @@ function ScriptStudioPage() {
   const [audience, setAudience] = useState("");
   const [tone, setTone] = useState<string>(tones[0] ?? "");
   const [language, setLanguage] = useState<string>(languages[0] ?? "");
+
+  const getUserSettingsFn = useServerFn(getUserSettings);
+  const { data: settings } = useQuery({
+    queryKey: SETTINGS_QUERY_KEY,
+    queryFn: () => getUserSettingsFn(),
+  });
+  useEffect(() => {
+    if (settings?.defaultAiTone && tones.includes(settings.defaultAiTone)) {
+      setTone(settings.defaultAiTone);
+    }
+  }, [settings?.userId]);
   const [creativity, setCreativity] = useState([55]);
   const [multiOption, setMultiOption] = useState(true);
 

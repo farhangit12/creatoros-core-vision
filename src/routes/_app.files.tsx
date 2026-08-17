@@ -96,20 +96,7 @@ const typeIcon: Record<FileType, typeof FileIcon> = {
   script: FileText,
 };
 
-const initialFiles: FileItem[] = [
-  { id: "1", name: "Episode Assets", type: "folder", size: "—", modified: "2 hours ago", favourite: false },
-  { id: "2", name: "Raw Footage", type: "folder", size: "—", modified: "Yesterday", favourite: false },
-  { id: "3", name: "Hero banner v3.png", type: "image", size: "3.1 MB", modified: "2 hours ago", favourite: true },
-  { id: "4", name: "Episode 1 rough cut.mp4", type: "video", size: "1.2 GB", modified: "Yesterday", favourite: false },
-  { id: "5", name: "Voiceover take 4.wav", type: "audio", size: "44 MB", modified: "3 days ago", favourite: false },
-  { id: "6", name: "Brand guidelines.pdf", type: "document", size: "2.4 MB", modified: "1 week ago", favourite: false },
-  { id: "7", name: "Episode 2 script.docx", type: "script", size: "48 KB", modified: "4 days ago", favourite: true },
-  { id: "8", name: "Thumbnail draft A.png", type: "image", size: "1.8 MB", modified: "5 days ago", favourite: false },
-  { id: "9", name: "Podcast clip 03.mp4", type: "video", size: "220 MB", modified: "2 weeks ago", favourite: false },
-  { id: "10", name: "Sound effects pack.zip", type: "audio", size: "88 MB", modified: "3 weeks ago", favourite: false },
-];
-
-const recentFiles = initialFiles.slice(2, 6);
+const initialFiles: FileItem[] = [];
 
 const typeFilters: { id: string; label: string; types?: FileType[] }[] = [
   { id: "all", label: "All" },
@@ -132,9 +119,9 @@ export function FilesPage() {
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
-  const [uploading, setUploading] = useState(true);
-  const [uploadProgress, setUploadProgress] = useState(42);
-  const [path] = useState(["My Files", "Projects", "Creator Onboarding Series"]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [path] = useState(["My Files"]);
 
   const filtered = useMemo(() => {
     let list = files;
@@ -277,26 +264,28 @@ export function FilesPage() {
         </div>
       ) : null}
 
-      <section>
-        <p className="mb-3 label-eyebrow">Recent files</p>
-        <div className="flex gap-3 overflow-x-auto pb-1">
-          {recentFiles.map((f) => {
-            const Icon = typeIcon[f.type];
-            return (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setPreviewFile(f)}
-                className="flex w-40 shrink-0 flex-col gap-2 rounded-lg border border-border bg-surface p-3 text-left hover:border-accent-brand/40"
-              >
-                <Icon className="size-4 text-text-muted" />
-                <p className="truncate text-[12px] text-foreground">{f.name}</p>
-                <p className="font-mono text-[10px] text-text-subtle">{f.modified}</p>
-              </button>
-            );
-          })}
-        </div>
-      </section>
+      {files.length > 0 ? (
+        <section>
+          <p className="mb-3 label-eyebrow">Recent files</p>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {files.slice(0, 6).map((f) => {
+              const Icon = typeIcon[f.type];
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setPreviewFile(f)}
+                  className="flex w-40 shrink-0 flex-col gap-2 rounded-lg border border-border bg-surface p-3 text-left hover:border-accent-brand/40"
+                >
+                  <Icon className="size-4 text-text-muted" />
+                  <p className="truncate text-[12px] text-foreground">{f.name}</p>
+                  <p className="font-mono text-[10px] text-text-subtle">{f.modified}</p>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative min-w-[200px] flex-1">

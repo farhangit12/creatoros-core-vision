@@ -149,6 +149,45 @@
   --sidebar-ring: var(--ring);
 }
 
+.light {
+  color-scheme: light;
+
+  /* Environment */
+  --background: oklch(0.99 0.003 265);
+  --surface: oklch(0.975 0.004 265);
+  --surface-2: oklch(0.953 0.005 265);
+  --surface-3: oklch(0.923 0.007 265);
+  --foreground: oklch(0.19 0.008 265);
+  --text-muted: oklch(0.42 0.014 265);
+  --text-subtle: oklch(0.556 0.012 265);
+
+  --border: oklch(0 0 0 / 8%);
+  --border-subtle: oklch(0 0 0 / 5%);
+  --input: oklch(0 0 0 / 10%);
+
+  /* Accent — blue (darkened/saturated slightly for contrast on white) */
+  --accent-brand: oklch(0.58 0.191 256);
+  --accent-hover: oklch(0.52 0.191 256);
+  --accent-tint: oklch(0.58 0.191 256 / 10%);
+  --ring: oklch(0.58 0.191 256 / 55%);
+
+  /* Semantic */
+  --success: oklch(0.552 0.14 156);
+  --warning: oklch(0.62 0.15 76);
+  --danger: oklch(0.552 0.203 25);
+
+  /* shadcn mappings that are hardcoded (not var()-derived) in :root */
+  --popover: oklch(1 0 0);
+
+  --chart-1: oklch(0.58 0.191 256);
+  --chart-2: oklch(0.552 0.14 156);
+  --chart-3: oklch(0.62 0.15 76);
+  --chart-4: oklch(0.5 0.012 265);
+  --chart-5: oklch(0.55 0.09 256);
+
+  --sidebar: oklch(0.965 0.004 265);
+}
+
 @layer base {
   * {
     border-color: var(--color-border);
