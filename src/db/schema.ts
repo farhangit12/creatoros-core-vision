@@ -212,6 +212,34 @@ export const aiAssets = pgTable(
   ],
 );
 
+export const fileTypeValues = ["image", "video", "audio", "document", "other"] as const;
+
+export const files = pgTable(
+  "files",
+  {
+    id: text("id").primaryKey(),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    mimeType: text("mimeType").notNull(),
+    fileType: text("fileType").notNull(),
+    size: integer("size").notNull(),
+    url: text("url").notNull(),
+    storageKey: text("storageKey").notNull(),
+    resourceType: text("resourceType").notNull(),
+    width: integer("width"),
+    height: integer("height"),
+    favourite: boolean("favourite").notNull().default(false),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  },
+  (table) => [
+    index("files_userId_idx").on(table.userId),
+    index("files_createdAt_idx").on(table.createdAt),
+  ],
+);
+
 export const userSettings = pgTable("user_settings", {
   userId: text("userId")
     .primaryKey()

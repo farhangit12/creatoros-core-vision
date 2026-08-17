@@ -1,30 +1,28 @@
-import { useMemo, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useMemo, useRef, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
+import { format } from "date-fns";
 import {
   Files as FilesIcon,
   Upload,
-  FolderPlus,
   Search,
   LayoutGrid,
   List,
   Star,
   MoreHorizontal,
-  Folder,
   FileText,
   Image as ImageIcon,
   Video,
   Music,
   File as FileIcon,
   X,
-  ChevronRight,
-  Home,
   Download,
   Trash2,
-  Move,
   Pencil,
-  Sparkles,
-  FolderPlus as AddToProjectIcon,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import { EmptyState } from "@/components/app/primitives";
 import { Button } from "@/components/ui/button";
@@ -53,7 +51,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Sheet,
@@ -63,6 +60,24 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import {
+  ALLOWED_MIME_TYPES,
+  MAX_FILE_SIZE_BYTES,
+  classifyMimeType,
+  formatFileSize,
+  toDownloadUrl,
+  type FileKind,
+} from "@/lib/files";
+import { uploadFileToCloudinary } from "@/lib/files-upload-client";
+import {
+  createFileRecord,
+  deleteFile,
+  getUploadSignature,
+  listFiles,
+  renameFile,
+  toggleFileFavourite,
+  type FileRecord,
+} from "@/lib/server/files";
 
 export const Route = createFileRoute("/_app/files")({
   head: () => ({
@@ -76,39 +91,47 @@ export const Route = createFileRoute("/_app/files")({
   component: FilesPage,
 });
 
-type FileType = "folder" | "image" | "video" | "audio" | "document" | "script";
+const FILES_QUERY_KEY = ["files"] as const;
 
-type FileItem = {
-  id: string;
-  name: string;
-  type: FileType;
-  size: string;
-  modified: string;
-  favourite: boolean;
-};
-
-const typeIcon: Record<FileType, typeof FileIcon> = {
-  folder: Folder,
+const typeIcon: Record<FileKind, typeof FileIcon> = {
   image: ImageIcon,
   video: Video,
   audio: Music,
   document: FileText,
-  script: FileText,
+  other: FileIcon,
 };
 
-const initialFiles: FileItem[] = [];
-
-const typeFilters: { id: string; label: string; types?: FileType[] }[] = [
+const typeFilters: { id: string; label: string; types?: FileKind[] }[] = [
   { id: "all", label: "All" },
-  { id: "images", label: "Images", types: ["image"] },
+  { id: "image", label: "Images", types: ["image"] },
   { id: "video", label: "Video", types: ["video"] },
   { id: "audio", label: "Audio", types: ["audio"] },
-  { id: "documents", label: "Documents", types: ["document"] },
-  { id: "scripts", label: "Scripts", types: ["script"] },
+  { id: "document", label: "Documents", types: ["document"] },
+  { id: "other", label: "Other", types: ["other"] },
 ];
 
+interface UploadItem {
+  id: string;
+  fileName: string;
+  progress: number;
+  status: "uploading" | "error";
+  error?: string;
+}
+
 export function FilesPage() {
-  const [files, setFiles] = useState<FileItem[]>(initialFiles);
+  const queryClient = useQueryClient();
+  const listFilesFn = useServerFn(listFiles);
+  const getUploadSignatureFn = useServerFn(getUploadSignature);
+  const createFileRecordFn = useServerFn(createFileRecord);
+  const renameFileFn = useServerFn(renameFile);
+  const toggleFavouriteFn = useServerFn(toggleFileFavourite);
+  const deleteFileFn = useServerFn(deleteFile);
+
+  const { data: files = [], isLoading } = useQuery({
+    queryKey: FILES_QUERY_KEY,
+    queryFn: () => listFilesFn(),
+  });
+
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [sort, setSort] = useState("modified");
@@ -116,18 +139,17 @@ export function FilesPage() {
   const [favouritesOnly, setFavouritesOnly] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [newFolderOpen, setNewFolderOpen] = useState(false);
-  const [newFolderName, setNewFolderName] = useState("");
-  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [path] = useState(["My Files"]);
+  const [previewFile, setPreviewFile] = useState<FileRecord | null>(null);
+  const [renameTarget, setRenameTarget] = useState<FileRecord | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [uploads, setUploads] = useState<UploadItem[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(() => {
     let list = files;
     const activeFilter = typeFilters.find((f) => f.id === typeFilter);
     if (activeFilter?.types) {
-      list = list.filter((f) => activeFilter.types!.includes(f.type));
+      list = list.filter((f) => activeFilter.types!.includes(f.fileType as FileKind));
     }
     if (favouritesOnly) list = list.filter((f) => f.favourite);
     if (search.trim()) {
@@ -136,42 +158,90 @@ export function FilesPage() {
     }
     const sorted = [...list];
     if (sort === "name") sorted.sort((a, b) => a.name.localeCompare(b.name));
-    if (sort === "size") sorted.sort((a, b) => a.size.localeCompare(b.size));
+    else if (sort === "size") sorted.sort((a, b) => b.size - a.size);
+    else sorted.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     return sorted;
   }, [files, typeFilter, favouritesOnly, search, sort]);
 
-  function toggleFavourite(id: string) {
-    setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, favourite: !f.favourite } : f)));
-  }
+  const renameMutation = useMutation({
+    mutationFn: (vars: { id: string; name: string }) => renameFileFn({ data: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: FILES_QUERY_KEY });
+      toast.success("File renamed");
+      setRenameTarget(null);
+    },
+    onError: () => toast.error("Couldn't rename file. Try again."),
+  });
+
+  const favouriteMutation = useMutation({
+    mutationFn: (id: string) => toggleFavouriteFn({ data: { id } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: FILES_QUERY_KEY }),
+    onError: () => toast.error("Couldn't update file. Try again."),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteFileFn({ data: { id } }),
+    onSuccess: (_result, id) => {
+      queryClient.invalidateQueries({ queryKey: FILES_QUERY_KEY });
+      setSelected((prev) => prev.filter((s) => s !== id));
+      if (previewFile?.id === id) setPreviewFile(null);
+      toast.success("File deleted");
+    },
+    onError: () => toast.error("Couldn't delete file. Try again."),
+  });
 
   function toggleSelect(id: string) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
   }
 
-  function deleteFile(id: string) {
-    setFiles((prev) => prev.filter((f) => f.id !== id));
-    setSelected((prev) => prev.filter((s) => s !== id));
-    toast("File deleted");
+  async function uploadOne(file: File) {
+    const classification = classifyMimeType(file.type);
+    if (!classification) {
+      toast.error(`"${file.name}" isn't a supported file type.`);
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      toast.error(`"${file.name}" is larger than the ${formatFileSize(MAX_FILE_SIZE_BYTES)} limit.`);
+      return;
+    }
+
+    const uploadId = `${file.name}-${Date.now()}-${Math.random()}`;
+    setUploads((prev) => [...prev, { id: uploadId, fileName: file.name, progress: 0, status: "uploading" }]);
+
+    try {
+      const signature = await getUploadSignatureFn();
+      const result = await uploadFileToCloudinary(file, signature, (percent) => {
+        setUploads((prev) => prev.map((u) => (u.id === uploadId ? { ...u, progress: percent } : u)));
+      });
+      await createFileRecordFn({
+        data: {
+          name: file.name,
+          mimeType: file.type,
+          size: file.size,
+          url: result.url,
+          storageKey: result.storageKey,
+          ...(result.width ? { width: result.width } : {}),
+          ...(result.height ? { height: result.height } : {}),
+        },
+      });
+      queryClient.invalidateQueries({ queryKey: FILES_QUERY_KEY });
+      setUploads((prev) => prev.filter((u) => u.id !== uploadId));
+      toast.success(`"${file.name}" uploaded`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Upload failed.";
+      setUploads((prev) => prev.map((u) => (u.id === uploadId ? { ...u, status: "error", error: message } : u)));
+      toast.error(`Couldn't upload "${file.name}"`, { description: message });
+    }
+  }
+
+  function uploadFiles(fileList: FileList | File[]) {
+    Array.from(fileList).forEach((file) => void uploadOne(file));
   }
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setIsDragging(false);
-    toast.success("Upload started", { description: "Files are being added to this folder." });
-  }
-
-  function createFolder() {
-    if (!newFolderName.trim()) {
-      toast.error("Give the folder a name");
-      return;
-    }
-    setFiles((prev) => [
-      { id: `folder-${Date.now()}`, name: newFolderName.trim(), type: "folder", size: "—", modified: "Just now", favourite: false },
-      ...prev,
-    ]);
-    setNewFolderOpen(false);
-    setNewFolderName("");
-    toast.success("Folder created");
+    if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files);
   }
 
   return (
@@ -185,44 +255,22 @@ export function FilesPage() {
           </p>
         </div>
         <div className="mt-4 flex gap-2 sm:mt-0">
-          <Dialog open={newFolderOpen} onOpenChange={setNewFolderOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-1.5">
-                <FolderPlus className="size-3.5" /> New folder
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-sm">
-              <DialogHeader>
-                <DialogTitle>New folder</DialogTitle>
-                <DialogDescription>Create a folder in the current location.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-2">
-                <Label className="text-[12px] text-text-muted">Folder name</Label>
-                <Input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="Untitled folder" />
-              </div>
-              <DialogFooter>
-                <Button variant="ghost" onClick={() => setNewFolderOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={createFolder}>Create</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-          <Button size="sm" className="gap-1.5" onClick={() => toast.success("Upload started")}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={ALLOWED_MIME_TYPES.join(",")}
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files) uploadFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          <Button size="sm" className="gap-1.5" onClick={() => fileInputRef.current?.click()}>
             <Upload className="size-3.5" /> Upload
           </Button>
         </div>
       </header>
-
-      <nav className="flex items-center gap-1.5 text-[12px] text-text-muted">
-        {path.map((p, i) => (
-          <span key={p} className="flex items-center gap-1.5">
-            {i === 0 ? <Home className="size-3.5" /> : null}
-            <span className={cn(i === path.length - 1 && "text-foreground")}>{p}</span>
-            {i < path.length - 1 ? <ChevronRight className="size-3.5 text-text-subtle" /> : null}
-          </span>
-        ))}
-      </nav>
 
       <div
         onDragOver={(e) => {
@@ -240,51 +288,42 @@ export function FilesPage() {
         <p className="text-[13px] text-foreground">
           {isDragging ? "Drop files to upload" : "Drag and drop files here, or use the Upload button"}
         </p>
+        <p className="mt-1 font-mono text-[10px] text-text-subtle">
+          Images, video, audio, PDF/docs · up to {formatFileSize(MAX_FILE_SIZE_BYTES)}
+        </p>
       </div>
 
-      {uploading ? (
-        <div className="flex items-center gap-4 rounded-lg border border-border bg-surface px-4 py-3">
-          <FileIcon className="size-4 shrink-0 text-text-subtle" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[12px] text-foreground">Uploading Episode 3 — cam B.mp4</p>
-            <Progress value={uploadProgress} className="mt-2 h-1.5" />
-          </div>
-          <span className="font-mono text-[11px] text-text-subtle">{uploadProgress}%</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7 text-text-subtle hover:text-foreground"
-            onClick={() => {
-              setUploading(false);
-              toast("Upload cancelled");
-            }}
-          >
-            <X className="size-3.5" />
-          </Button>
+      {uploads.length > 0 ? (
+        <div className="space-y-2">
+          {uploads.map((u) => (
+            <div key={u.id} className="flex items-center gap-4 rounded-lg border border-border bg-surface px-4 py-3">
+              {u.status === "error" ? (
+                <AlertCircle className="size-4 shrink-0 text-danger" />
+              ) : (
+                <FileIcon className="size-4 shrink-0 text-text-subtle" />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[12px] text-foreground">{u.fileName}</p>
+                {u.status === "error" ? (
+                  <p className="mt-1 text-[11px] text-danger">{u.error}</p>
+                ) : (
+                  <Progress value={u.progress} className="mt-2 h-1.5" />
+                )}
+              </div>
+              {u.status === "uploading" ? (
+                <span className="font-mono text-[11px] text-text-subtle">{u.progress}%</span>
+              ) : null}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 text-text-subtle hover:text-foreground"
+                onClick={() => setUploads((prev) => prev.filter((x) => x.id !== u.id))}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          ))}
         </div>
-      ) : null}
-
-      {files.length > 0 ? (
-        <section>
-          <p className="mb-3 label-eyebrow">Recent files</p>
-          <div className="flex gap-3 overflow-x-auto pb-1">
-            {files.slice(0, 6).map((f) => {
-              const Icon = typeIcon[f.type];
-              return (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => setPreviewFile(f)}
-                  className="flex w-40 shrink-0 flex-col gap-2 rounded-lg border border-border bg-surface p-3 text-left hover:border-accent-brand/40"
-                >
-                  <Icon className="size-4 text-text-muted" />
-                  <p className="truncate text-[12px] text-foreground">{f.name}</p>
-                  <p className="font-mono text-[10px] text-text-subtle">{f.modified}</p>
-                </button>
-              );
-            })}
-          </div>
-        </section>
       ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
@@ -293,7 +332,7 @@ export function FilesPage() {
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search files…" className="pl-9" />
         </div>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger size="sm" className="w-40">
+          <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -305,7 +344,7 @@ export function FilesPage() {
           </SelectContent>
         </Select>
         <Select value={sort} onValueChange={setSort}>
-          <SelectTrigger size="sm" className="w-40">
+          <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -347,22 +386,25 @@ export function FilesPage() {
         <div className="flex items-center gap-3 rounded-lg border border-accent-brand/30 bg-accent-tint px-4 py-2.5">
           <span className="text-[12px] text-foreground">{selected.length} selected</span>
           <div className="ml-auto flex gap-2">
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => toast("Move files")}>
-              <Move className="size-3.5" /> Move
-            </Button>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => toast("Downloading files")}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => {
+                selected.forEach((id) => {
+                  const f = files.find((x) => x.id === id);
+                  if (f) window.open(toDownloadUrl(f.url), "_blank");
+                });
+              }}
+            >
               <Download className="size-3.5" /> Download
-            </Button>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => toast("Added to project")}>
-              <AddToProjectIcon className="size-3.5" /> Add to Project
             </Button>
             <Button
               variant="destructive"
               size="sm"
               className="gap-1.5"
               onClick={() => {
-                selected.forEach(deleteFile);
-                setSelected([]);
+                selected.forEach((id) => deleteMutation.mutate(id));
               }}
             >
               <Trash2 className="size-3.5" /> Delete
@@ -371,13 +413,19 @@ export function FilesPage() {
         </div>
       ) : null}
 
-      {filtered.length === 0 ? (
+      {isLoading ? (
+        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {Array.from({ length: 5 }, (_, i) => (
+            <div key={i} className="h-40 animate-pulse rounded-xl border border-border bg-surface-2" />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
         <EmptyState
           icon={FilesIcon}
-          title="This folder is empty"
-          description="Upload files or create a folder to start organizing this workspace."
+          title="No files yet"
+          description="Upload your first asset to get started."
           action={
-            <Button size="sm" className="gap-1.5" onClick={() => toast.success("Upload started")}>
+            <Button size="sm" className="gap-1.5" onClick={() => fileInputRef.current?.click()}>
               <Upload className="size-3.5" /> Upload files
             </Button>
           }
@@ -390,9 +438,13 @@ export function FilesPage() {
               file={f}
               selected={selected.includes(f.id)}
               onToggleSelect={() => toggleSelect(f.id)}
-              onToggleFavourite={() => toggleFavourite(f.id)}
+              onToggleFavourite={() => favouriteMutation.mutate(f.id)}
               onOpen={() => setPreviewFile(f)}
-              onDelete={() => deleteFile(f.id)}
+              onRename={() => {
+                setRenameTarget(f);
+                setRenameValue(f.name);
+              }}
+              onDelete={() => deleteMutation.mutate(f.id)}
             />
           ))}
         </div>
@@ -404,9 +456,13 @@ export function FilesPage() {
               file={f}
               selected={selected.includes(f.id)}
               onToggleSelect={() => toggleSelect(f.id)}
-              onToggleFavourite={() => toggleFavourite(f.id)}
+              onToggleFavourite={() => favouriteMutation.mutate(f.id)}
               onOpen={() => setPreviewFile(f)}
-              onDelete={() => deleteFile(f.id)}
+              onRename={() => {
+                setRenameTarget(f);
+                setRenameValue(f.name);
+              }}
+              onDelete={() => deleteMutation.mutate(f.id)}
             />
           ))}
         </div>
@@ -419,71 +475,129 @@ export function FilesPage() {
               <SheetHeader>
                 <SheetTitle>{previewFile.name}</SheetTitle>
                 <SheetDescription>
-                  {previewFile.type} · {previewFile.size} · modified {previewFile.modified}
+                  {previewFile.fileType} · {formatFileSize(previewFile.size)} · uploaded{" "}
+                  {format(new Date(previewFile.createdAt), "MMM d, yyyy")}
                 </SheetDescription>
               </SheetHeader>
               <div className="space-y-5 px-4 pb-4">
-                <div className="flex h-40 items-center justify-center rounded-lg bg-surface-3">
-                  {(() => {
-                    const Icon = typeIcon[previewFile.type];
-                    return <Icon className="size-8 text-text-subtle" />;
-                  })()}
+                <div className="flex min-h-40 items-center justify-center overflow-hidden rounded-lg bg-surface-3">
+                  {previewFile.fileType === "image" ? (
+                    <img src={previewFile.url} alt={previewFile.name} className="max-h-64 w-full object-contain" />
+                  ) : previewFile.fileType === "video" ? (
+                    <video src={previewFile.url} controls className="max-h-64 w-full" />
+                  ) : previewFile.fileType === "audio" ? (
+                    <audio src={previewFile.url} controls className="w-full px-4" />
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 py-8">
+                      {(() => {
+                        const Icon = typeIcon[previewFile.fileType as FileKind];
+                        return <Icon className="size-8 text-text-subtle" />;
+                      })()}
+                      <a
+                        href={previewFile.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[12px] text-accent-brand hover:underline"
+                      >
+                        Open in new tab
+                      </a>
+                    </div>
+                  )}
                 </div>
                 <dl className="space-y-2 text-[12px]">
                   <div className="flex justify-between">
                     <dt className="text-text-subtle">Type</dt>
-                    <dd className="text-text-muted capitalize">{previewFile.type}</dd>
+                    <dd className="text-text-muted">{previewFile.mimeType}</dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-text-subtle">Size</dt>
-                    <dd className="text-text-muted">{previewFile.size}</dd>
+                    <dd className="text-text-muted">{formatFileSize(previewFile.size)}</dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-text-subtle">Modified</dt>
-                    <dd className="text-text-muted">{previewFile.modified}</dd>
-                  </div>
+                  {previewFile.width && previewFile.height ? (
+                    <div className="flex justify-between">
+                      <dt className="text-text-subtle">Dimensions</dt>
+                      <dd className="text-text-muted">
+                        {previewFile.width} × {previewFile.height}
+                      </dd>
+                    </div>
+                  ) : null}
                 </dl>
-                <div className="space-y-1.5">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">AI actions</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    <Link
-                      to="/chat"
-                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface-2 px-2.5 text-[12px] text-text-muted hover:text-foreground"
-                    >
-                      <Sparkles className="size-3.5" /> Ask AI about this file
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => toast("Marked as reference")}
-                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface-2 px-2.5 text-[12px] text-text-muted hover:text-foreground"
-                    >
-                      Use as Reference
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toast("Added to project")}
-                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface-2 px-2.5 text-[12px] text-text-muted hover:text-foreground"
-                    >
-                      Add to Project
-                    </button>
-                  </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 gap-1.5"
+                    onClick={() => window.open(toDownloadUrl(previewFile.url), "_blank")}
+                  >
+                    <Download className="size-3.5" /> Download
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 gap-1.5"
+                    onClick={() => {
+                      setRenameTarget(previewFile);
+                      setRenameValue(previewFile.name);
+                    }}
+                  >
+                    <Pencil className="size-3.5" /> Rename
+                  </Button>
                 </div>
               </div>
             </>
           ) : null}
         </SheetContent>
       </Sheet>
+
+      <Dialog open={!!renameTarget} onOpenChange={(open) => !open && setRenameTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename file</DialogTitle>
+            <DialogDescription>Choose a new name for this file.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label className="text-[12px] text-text-muted">Name</Label>
+            <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenameTarget(null)} disabled={renameMutation.isPending}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!renameTarget) return;
+                if (!renameValue.trim()) {
+                  toast.error("Name can't be empty.");
+                  return;
+                }
+                renameMutation.mutate({ id: renameTarget.id, name: renameValue.trim() });
+              }}
+              disabled={renameMutation.isPending}
+            >
+              {renameMutation.isPending ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" /> Saving…
+                </>
+              ) : (
+                "Save"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function FileMenu({
   onOpen,
+  onRename,
   onFavourite,
   favourite,
   onDelete,
 }: {
   onOpen: () => void;
+  onRename: () => void;
   onFavourite: () => void;
   favourite: boolean;
   onDelete: () => void;
@@ -497,30 +611,14 @@ function FileMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuItem onClick={onOpen}>Preview</DropdownMenuItem>
-        <DropdownMenuItem>
+        <DropdownMenuItem onClick={onRename}>
           <Pencil className="size-3.5" /> Rename
-        </DropdownMenuItem>
-        <DropdownMenuItem>
-          <Move className="size-3.5" /> Move
-        </DropdownMenuItem>
-        <DropdownMenuItem>
-          <Download className="size-3.5" /> Download
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onFavourite}>
           <Star className="size-3.5" /> {favourite ? "Unfavourite" : "Favourite"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link to="/chat">
-            <Sparkles className="size-3.5" /> Ask AI about this file
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem>Use as Reference</DropdownMenuItem>
-        <DropdownMenuItem>
-          <AddToProjectIcon className="size-3.5" /> Add to Project
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onClick={onDelete}>
+        <DropdownMenuItem className="text-danger focus:text-danger" onClick={onDelete}>
           <Trash2 className="size-3.5" /> Delete
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -534,16 +632,18 @@ function FileCard({
   onToggleSelect,
   onToggleFavourite,
   onOpen,
+  onRename,
   onDelete,
 }: {
-  file: FileItem;
+  file: FileRecord;
   selected: boolean;
   onToggleSelect: () => void;
   onToggleFavourite: () => void;
   onOpen: () => void;
+  onRename: () => void;
   onDelete: () => void;
 }) {
-  const Icon = typeIcon[file.type];
+  const Icon = typeIcon[file.fileType as FileKind];
   return (
     <div
       role="button"
@@ -559,15 +659,19 @@ function FileCard({
           onClick={(e) => e.stopPropagation()}
           onCheckedChange={onToggleSelect}
         />
-        <FileMenu onOpen={onOpen} onFavourite={onToggleFavourite} favourite={file.favourite} onDelete={onDelete} />
+        <FileMenu onOpen={onOpen} onRename={onRename} onFavourite={onToggleFavourite} favourite={file.favourite} onDelete={onDelete} />
       </div>
-      <div className="grid h-16 place-items-center rounded-lg bg-surface-3">
-        <Icon className="size-6 text-text-subtle" />
+      <div className="grid h-16 place-items-center overflow-hidden rounded-lg bg-surface-3">
+        {file.fileType === "image" ? (
+          <img src={file.url} alt={file.name} className="h-full w-full object-cover" />
+        ) : (
+          <Icon className="size-6 text-text-subtle" />
+        )}
       </div>
       <div>
         <p className="truncate text-[12px] text-foreground">{file.name}</p>
         <div className="mt-1 flex items-center justify-between">
-          <p className="font-mono text-[10px] text-text-subtle">{file.size}</p>
+          <p className="font-mono text-[10px] text-text-subtle">{formatFileSize(file.size)}</p>
           <button
             type="button"
             onClick={(e) => {
@@ -590,16 +694,18 @@ function FileRow({
   onToggleSelect,
   onToggleFavourite,
   onOpen,
+  onRename,
   onDelete,
 }: {
-  file: FileItem;
+  file: FileRecord;
   selected: boolean;
   onToggleSelect: () => void;
   onToggleFavourite: () => void;
   onOpen: () => void;
+  onRename: () => void;
   onDelete: () => void;
 }) {
-  const Icon = typeIcon[file.type];
+  const Icon = typeIcon[file.fileType as FileKind];
   return (
     <div
       role="button"
@@ -609,8 +715,10 @@ function FileRow({
       <Checkbox checked={selected} onClick={(e) => e.stopPropagation()} onCheckedChange={onToggleSelect} />
       <Icon className="size-4 shrink-0 text-text-subtle" />
       <p className="min-w-0 flex-1 truncate text-[13px] text-foreground">{file.name}</p>
-      <span className="hidden w-20 shrink-0 font-mono text-[11px] text-text-subtle sm:block">{file.size}</span>
-      <span className="hidden w-28 shrink-0 font-mono text-[11px] text-text-subtle md:block">{file.modified}</span>
+      <span className="hidden w-20 shrink-0 font-mono text-[11px] text-text-subtle sm:block">{formatFileSize(file.size)}</span>
+      <span className="hidden w-28 shrink-0 font-mono text-[11px] text-text-subtle md:block">
+        {format(new Date(file.updatedAt), "MMM d, yyyy")}
+      </span>
       <button
         type="button"
         onClick={(e) => {
@@ -622,7 +730,7 @@ function FileRow({
         <Star className={cn("size-3.5", file.favourite && "fill-warning text-warning")} />
       </button>
       <div onClick={(e) => e.stopPropagation()}>
-        <FileMenu onOpen={onOpen} onFavourite={onToggleFavourite} favourite={file.favourite} onDelete={onDelete} />
+        <FileMenu onOpen={onOpen} onRename={onRename} onFavourite={onToggleFavourite} favourite={file.favourite} onDelete={onDelete} />
       </div>
     </div>
   );
