@@ -88,11 +88,11 @@ function TagInput({
 function BrandKitPage() {
   const [name, setName] = useState("Northline Studio");
   const [colors, setColors] = useState(["#2563EB", "#0F172A", "#F8FAFC", "#22C55E", "#F59E0B"]);
-  const [headingFont, setHeadingFont] = useState(headingFonts[0]);
-  const [bodyFont, setBodyFont] = useState(bodyFonts[0]);
-  const [visualStyle, setVisualStyle] = useState(visualStyles[0]);
-  const [thumbnailStyle, setThumbnailStyle] = useState(thumbnailStyles[0]);
-  const [tone, setTone] = useState(tones[0]);
+  const [headingFont, setHeadingFont] = useState(headingFonts[0]!);
+  const [bodyFont, setBodyFont] = useState(bodyFonts[0]!);
+  const [visualStyle, setVisualStyle] = useState(visualStyles[0]!);
+  const [thumbnailStyle, setThumbnailStyle] = useState(thumbnailStyles[0]!);
+  const [tone, setTone] = useState(tones[0]!);
   const [doList, setDoList] = useState(["Use first-person stories", "Keep sentences short"]);
   const [dontList, setDontList] = useState(["Use corporate jargon", "Over-promise results"]);
   const [handles, setHandles] = useState({

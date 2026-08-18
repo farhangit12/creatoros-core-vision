@@ -112,6 +112,9 @@ async function recordFailedGeneration(params: {
 const generateThumbnailSchema = z.object({
   topic: z.string().trim().min(1, "Topic is required.").max(300),
   aspectRatio: z.string().trim().min(1).max(20),
+  // ASCEND A3-B: locked to 1-2 (never 4) to bound Cloudflare/Cloudinary
+  // concurrency -- see image-service.ts and cloudflare.ts's Promise.all.
+  count: z.number().int().min(1).max(2).optional(),
   style: z.string().trim().max(100).optional(),
   platform: z.string().trim().max(60).optional(),
   conversationId: z.string().min(1).optional(),
@@ -125,9 +128,10 @@ export const generateThumbnailAction = createServerFn({ method: "POST" })
       await assertOwnedConversation(userId, data.conversationId);
     }
     const startedAt = new Date();
-    const { conversationId, style, platform, ...rest } = data;
+    const { conversationId, style, platform, count, ...rest } = data;
     const input = {
       ...rest,
+      count: count ?? 1,
       ...(style !== undefined ? { style } : {}),
       ...(platform !== undefined ? { platform } : {}),
     };

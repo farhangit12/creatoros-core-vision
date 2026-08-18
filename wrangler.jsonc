@@ -1,0 +1,40 @@
+{
+  // Source config, merged into the nitro-generated .output/server/wrangler.json
+  // at build time (nitro finds this file via findNearestFile from the project
+  // root and merges it under generated build-path overrides -- see
+  // node_modules/nitro/dist/_presets.mjs's writeWranglerConfig). Do not hand-edit
+  // the generated .output/server/wrangler.json; edit this file instead.
+  //
+  // "name" is pinned to match the Worker nitro would otherwise auto-derive from
+  // the git remote (farhangit12/creatoros-core-vision -> this exact name), so
+  // this stays the same already-deployed Worker, not a new one.
+  "name": "farhangit12-creatoros-core-vision",
+
+  // ASCEND A2-B: routes DB access through Cloudflare Hyperdrive instead of a
+  // direct cloudflare:sockets connection to Neon's public host, which fails on
+  // the real Workers runtime with "proxy request failed, cannot connect to the
+  // specified address" (confirmed via live wrangler tail on the real deployed
+  // Worker). Hyperdrive's connection string points at a Cloudflare-internal
+  // proxy address that IS reachable via cloudflare:sockets, which then proxies
+  // to the real origin (Neon) on Hyperdrive's side. Config id created via
+  // `wrangler hyperdrive create creatoros-neon-db --connection-string=... --binding=HYPERDRIVE`,
+  // pointed at the existing Neon database -- no new database, no schema change.
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "d9632c9f6ab54a6f987e41dc78ded4a2"
+    }
+  ],
+
+  // ASCEND A2-C: code that imports `process` via the bare "node:process"
+  // specifier (e.g. src/db/index.ts's compiled chunk) resolves to workerd's
+  // own NATIVE process implementation under `nodejs_compat` -- a separate
+  // thing from nitro's own globalThis.__env__-backed unenv polyfill, and its
+  // process.env stays empty by design unless this second, distinct flag is
+  // also set. This is Cloudflare's own documented mechanism for populating
+  // native process.env from the Worker's plain string bindings/secrets.
+  // Confirmed via live diagnostic + static bundle analysis (ASCEND A2-C) that
+  // this exact gap -- not a TanStack dispatch bug -- is why DATABASE_URL etc.
+  // read as undefined despite Hyperdrive/env being correctly wired.
+  "compatibility_flags": ["nodejs_compat_populate_process_env"]
+}

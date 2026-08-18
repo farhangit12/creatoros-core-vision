@@ -83,7 +83,9 @@ const templates = [
   { name: "Idea → Outline → Draft", body: "Turn a raw idea into a structured outline, then a full draft." },
 ];
 
-const historyRuns = [
+type RunStatus = "Success" | "Failed" | "Skipped";
+
+const historyRuns: { id: string; time: string; workflow: string; status: RunStatus; duration: string }[] = [
   { id: "r1", time: "Today, 14:02", workflow: "Comment triage assistant", status: "Success", duration: "2.1s" },
   { id: "r2", time: "Today, 09:00", workflow: "New video → auto captions", status: "Success", duration: "48s" },
   { id: "r3", time: "Yesterday, 21:14", workflow: "Script → Thumbnail → Planner", status: "Failed", duration: "6.4s" },
@@ -91,13 +93,13 @@ const historyRuns = [
   { id: "r5", time: "2 days ago, 17:30", workflow: "Comment triage assistant", status: "Success", duration: "1.8s" },
 ];
 
-const statusTone: Record<string, "success" | "danger" | "neutral"> = {
+const statusTone: Record<RunStatus, "success" | "danger" | "neutral"> = {
   Success: "success",
   Failed: "danger",
   Skipped: "neutral",
 };
 
-const statusIcon: Record<string, typeof CheckCircle2> = {
+const statusIcon: Record<RunStatus, typeof CheckCircle2> = {
   Success: CheckCircle2,
   Failed: XCircle,
   Skipped: MinusCircle,
@@ -291,9 +293,9 @@ function WorkflowCanvas({ onClose }: { onClose: () => void }) {
   const [enabled, setEnabled] = useState(true);
   const [selected, setSelected] = useState<NodeKind>("trigger");
   const [testState, setTestState] = useState<"idle" | "running" | "success">("idle");
-  const [triggerType, setTriggerType] = useState(triggerTypes[0]);
-  const [aiAction, setAiAction] = useState(aiActions[0]);
-  const [output, setOutput] = useState(outputDestinations[0]);
+  const [triggerType, setTriggerType] = useState(triggerTypes[0]!);
+  const [aiAction, setAiAction] = useState(aiActions[0]!);
+  const [output, setOutput] = useState(outputDestinations[0]!);
 
   const nodes: { kind: NodeKind; label: string; icon: typeof Zap; summary: string }[] = [
     { kind: "trigger", label: "Trigger", icon: Zap, summary: triggerType },

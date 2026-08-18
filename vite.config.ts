@@ -6,6 +6,19 @@
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
+// Pinned per ASCEND A2 (2026-08-18): nitro's own default is the literal string
+// "latest", which resolves to the build machine's current system date at build
+// time — non-reproducible, and broke local `wrangler dev`/workerd entirely when
+// this machine's clock read a date newer than what the installed wrangler/workerd
+// build supports ("Compatibility date ... is in the future and unsupported").
+// 2024-09-23 is the date nodejs_compat became broadly supported/documented by
+// Cloudflare and has been verified working end-to-end against wrangler 4.123.0 in
+// this repo's Worker boot/HTTP/SSR tests. Bump deliberately, not by letting it float.
+// Set as an env var (nitro reads `COMPATIBILITY_DATE` at build time) rather than via
+// the `nitro` option below, since @lovable.dev/vite-tanstack-config's type for that
+// option deliberately excludes compatibilityDate (see its own comment on `nitro?:`).
+process.env["COMPATIBILITY_DATE"] ??= "2024-09-23";
+
 export default defineConfig({
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).

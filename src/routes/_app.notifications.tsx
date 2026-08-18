@@ -329,7 +329,7 @@ function NotificationsPage() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onSelect={() => remove(n.id)}
-                            variant="destructive"
+                            className="text-danger focus:text-danger"
                           >
                             <Trash2 className="size-4" /> Delete
                           </DropdownMenuItem>

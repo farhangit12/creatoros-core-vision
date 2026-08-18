@@ -102,7 +102,7 @@ function SignupPage() {
           <Input
             id="name"
             className="h-10"
-            placeholder="Alex Rivera"
+            placeholder="Jenny Rosen"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />

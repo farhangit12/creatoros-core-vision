@@ -64,12 +64,15 @@ export async function generateImages(params: GenerateImagesParams): Promise<Gene
   }
 }
 
-const THUMBNAIL_LABELS = ["A", "B", "C", "D"];
+// Locked to 2 entries: Thumbnail Studio's variation count is capped at 2 (ASCEND A3-B).
+const THUMBNAIL_LABELS = ["A", "B"];
 
 export interface GenerateThumbnailsParams {
   userId: string;
   topic: string;
   aspectRatio: string;
+  /** Locked to 1-2 by ASCEND A3-B -- see thumbnail-studio.ts's zod schema for enforcement. */
+  count: number;
   style?: string;
   platform?: string;
   conversationId?: string;
@@ -99,7 +102,7 @@ export async function generateThumbnails(params: GenerateThumbnailsParams): Prom
       operation: "thumbnail.generate",
       model,
       prompt: params.topic,
-      count: THUMBNAIL_LABELS.length,
+      count: params.count,
       aspectRatio: params.aspectRatio,
       style: params.style,
       metadata: { platform: params.platform },

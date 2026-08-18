@@ -27,12 +27,24 @@ const OPENROUTER_CHAT_MODEL = "openai/gpt-5.6-luna";
 const OPENROUTER_SCRIPT_GENERATE_MODEL = "anthropic/claude-sonnet-5";
 const OPENROUTER_SCRIPT_REWRITE_MODEL = "openai/gpt-5.6-luna";
 
-// Locked by the Phase 3H-A.2 free-provider benchmark (2026-08-16): Groq's
-// llama-3.3-70b-versatile is primary for all three text operations (generous
-// per-account 12K TPM / 1K RPD headroom, no shared-pool contention, quality
-// close to the OpenRouter free candidates). OpenRouter's free Nemotron 3
-// Ultra is the fallback for availability failures only -- see router.ts.
-const GROQ_TEXT_MODEL = "llama-3.3-70b-versatile";
+// ASCEND A3 (2026-08-18): llama-3.3-70b-versatile was removed from Groq's
+// catalog entirely (confirmed via a live GET /openai/v1/models call against
+// this project's key -- it's no longer in the list at all, and every chat/
+// script request was failing with a real 404 "model does not exist"). Replaced
+// with groq/compound-mini after checking the current live model list and
+// testing real candidates against our actual prompts (chat, script.generate's
+// JSON-array shape, script.rewrite) -- see router.ts's isRetryableProviderError
+// comment for why a 404 correctly does NOT trigger fallback (dead model config,
+// not a transient failure). compound-mini has a 70K TPM ceiling on this
+// account (vs. 8K TPM shared by openai/gpt-oss-120b, openai/gpt-oss-20b, AND
+// qwen/qwen3.6-27b -- confirmed via live x-ratelimit-limit-tokens response
+// headers, so those three would hit the exact same collision that killed
+// llama-3.3-70b-versatile's replacement candidates), verified live to return
+// clean text/JSON with no markdown fences and no tool_calls for all three of
+// our prompt shapes despite being one of Groq's tool-using "compound" systems.
+// OpenRouter's free Nemotron 3 Ultra remains the fallback for availability
+// failures only -- see router.ts.
+const GROQ_TEXT_MODEL = "groq/compound-mini";
 const FREE_FALLBACK_PROVIDER = openrouterTextProvider.id;
 const FREE_FALLBACK_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free";
 const FREE_FALLBACK = { provider: FREE_FALLBACK_PROVIDER, model: FREE_FALLBACK_MODEL };

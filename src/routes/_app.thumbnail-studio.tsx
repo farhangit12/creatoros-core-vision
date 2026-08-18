@@ -60,6 +60,8 @@ export const Route = createFileRoute("/_app/thumbnail-studio")({
 const styles = ["Bold text", "Cinematic", "Minimal", "Face-forward", "Documentary"];
 const positions = ["TL", "TC", "TR", "ML", "MC", "MR", "BL", "BC", "BR"] as const;
 type Position = (typeof positions)[number];
+// ASCEND A3-B: locked to 1-2 -- never add 3 or 4 here, see registry/image-service.
+const counts = [1, 2] as const;
 
 type Variation = {
   id: string;
@@ -133,6 +135,7 @@ function ThumbnailStudioPage() {
   const [topic, setTopic] = useState("");
   const [ratio, setRatio] = useState((platform.aspectRatios[0] ?? "16:9"));
   const [style, setStyle] = useState(styles[0] ?? "Bold text");
+  const [count, setCount] = useState<(typeof counts)[number]>(1);
   const [status, setStatus] = useState<"idle" | "generating" | "done">("idle");
   const [variations, setVariations] = useState<Variation[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -155,6 +158,7 @@ function ThumbnailStudioPage() {
         data: {
           topic,
           aspectRatio: ratio,
+          count,
           ...(style ? { style } : {}),
           platform: platform.label,
         },
@@ -254,10 +258,18 @@ function ThumbnailStudioPage() {
                 </p>
               </div>
             </Field>
+            <Field label="Variations">
+              <ChipGroup
+                options={counts.map(String)}
+                value={String(count)}
+                onChange={(v) => setCount(Number(v) as (typeof counts)[number])}
+                disabled={status === "generating"}
+              />
+            </Field>
             <div className="flex items-center justify-between pt-1">
-              <CostHint credits={6} />
+              <CostHint credits={count * 3} />
               <Button size="sm" onClick={generate} disabled={status === "generating" || !topic.trim()}>
-                {status === "generating" ? "Generating…" : "Generate 4 variations"}
+                {status === "generating" ? "Generating…" : `Generate ${count} variation${count > 1 ? "s" : ""}`}
               </Button>
             </div>
           </div>
@@ -289,13 +301,13 @@ function ThumbnailStudioPage() {
           >
             {status === "idle" && variations.length === 0 ? (
               <p className="py-10 text-center text-[13px] text-text-subtle">
-                Generate to see four thumbnail variations here.
+                Generate to see your thumbnail variation{count > 1 ? "s" : ""} here.
               </p>
             ) : status === "generating" ? (
               <div className="space-y-4">
                 <GeneratingState label="Rendering variations" />
-                <div className="grid grid-cols-2 gap-4">
-                  {Array.from({ length: 4 }).map((_, i) => (
+                <div className={cn("grid gap-4", count === 1 ? "grid-cols-1" : "grid-cols-2")}>
+                  {Array.from({ length: count }).map((_, i) => (
                     <WireLine key={i} className={cn("w-full", aspectClass(ratio))} />
                   ))}
                 </div>
@@ -348,7 +360,7 @@ function ThumbnailStudioPage() {
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-4">
+              <div className={cn("grid gap-4", variations.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
                 {variations.map((v) => (
                   <OptionCard
                     key={v.id}
