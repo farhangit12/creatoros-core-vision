@@ -105,25 +105,26 @@ function shorten(text: string): string {
   return words.slice(0, target).join(" ") + (words.length > target ? "." : "");
 }
 
-function applyRewriteAction(text: string, action: string): string {
+function applyRewriteAction(text: string, action: string, tone?: string): string {
   const seed = hashSeed(text + action);
+  if (action.startsWith("tone-")) {
+    const explicitTone = action.slice("tone-".length);
+    return `In a ${explicitTone.toLowerCase()} tone: ${text}`;
+  }
+  const toneSuffix = tone?.trim() ? ` (in a ${tone.toLowerCase()} tone)` : "";
   if (action === "expand") {
-    return `${text} ${EXPANSION_SUFFIXES[seed % EXPANSION_SUFFIXES.length]}`;
+    return `${text} ${EXPANSION_SUFFIXES[seed % EXPANSION_SUFFIXES.length]}${toneSuffix}`;
   }
   if (action === "shorten") {
-    return shorten(text);
+    return `${shorten(text)}${toneSuffix}`;
   }
   if (action === "improve") {
-    return `${IMPROVE_PREFIXES[seed % IMPROVE_PREFIXES.length]}${text}`;
+    return `${IMPROVE_PREFIXES[seed % IMPROVE_PREFIXES.length]}${text}${toneSuffix}`;
   }
   if (action === "continue") {
-    return `${text} ${CONTINUATION_SUFFIXES[seed % CONTINUATION_SUFFIXES.length]}`;
+    return `${text} ${CONTINUATION_SUFFIXES[seed % CONTINUATION_SUFFIXES.length]}${toneSuffix}`;
   }
-  if (action.startsWith("tone-")) {
-    const tone = action.slice("tone-".length);
-    return `In a ${tone.toLowerCase()} tone: ${text}`;
-  }
-  return `${REWRITE_PREFIXES[seed % REWRITE_PREFIXES.length]}${text}`;
+  return `${REWRITE_PREFIXES[seed % REWRITE_PREFIXES.length]}${text}${toneSuffix}`;
 }
 
 // --- structured.generate ----------------------------------------------
@@ -159,7 +160,8 @@ export const mockTextProvider: TextProvider = {
       }
       case "script.rewrite": {
         const action = String(request.metadata?.["action"] ?? "rewrite");
-        content = applyRewriteAction(request.prompt ?? "", action);
+        const tone = request.metadata?.["tone"] as string | undefined;
+        content = applyRewriteAction(request.prompt ?? "", action, tone);
         break;
       }
       case "structured.generate": {

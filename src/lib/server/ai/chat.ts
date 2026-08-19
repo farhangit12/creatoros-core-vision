@@ -286,6 +286,24 @@ export const deleteConversation = createServerFn({ method: "POST" })
     return { success: true } as const;
   });
 
+export const clearConversations = createServerFn({ method: "POST" }).handler(async () => {
+  const userId = await requireUserId();
+  const rows = await db
+    .select({ id: aiConversations.id })
+    .from(aiConversations)
+    .where(and(eq(aiConversations.userId, userId), eq(aiConversations.feature, "chat")));
+  if (rows.length === 0) {
+    return { deleted: 0 } as const;
+  }
+  // aiMessages rows cascade-delete with their parent conversation (FK
+  // onDelete: "cascade"); aiGenerations.conversationId is set null, not
+  // deleted -- matches deleteConversation's single-item behavior.
+  await db
+    .delete(aiConversations)
+    .where(and(eq(aiConversations.userId, userId), eq(aiConversations.feature, "chat")));
+  return { deleted: rows.length } as const;
+});
+
 export const clearConversationMessages = createServerFn({ method: "POST" })
   .validator((input: unknown) => conversationIdSchema.parse(input))
   .handler(async ({ data }) => {

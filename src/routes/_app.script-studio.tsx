@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -53,12 +53,19 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { generateScriptAction, rewriteScriptAction } from "@/lib/server/ai/script-studio";
+import { getGeneration } from "@/lib/server/ai/history";
 import { getUserSettings } from "@/lib/server/settings";
+import { useSession } from "@/lib/auth-client";
+import { platforms } from "@/lib/creator-data";
+import { useDraftAutosave } from "@/lib/local-draft-storage";
 
 const SETTINGS_QUERY_KEY = ["user-settings"] as const;
 import type { ScriptOption } from "@/lib/ai/types";
 
 export const Route = createFileRoute("/_app/script-studio")({
+  validateSearch: (search: Record<string, unknown>): { reedit?: string } => ({
+    ...(typeof search["reedit"] === "string" ? { reedit: search["reedit"] } : {}),
+  }),
   head: () => ({
     meta: [
       { title: "Script Studio — CreatorOS AI" },
@@ -71,6 +78,23 @@ export const Route = createFileRoute("/_app/script-studio")({
 });
 
 type Section = { id: string; label: string; text: string };
+
+interface ScriptStudioDraft {
+  title: string;
+  topic: string;
+  platformId: string;
+  contentType: string;
+  duration: string;
+  audience: string;
+  tone: string;
+  language: string;
+  creativity: number[];
+  multiOption: boolean;
+  scriptOptions: ScriptOption[];
+  hasGenerated: boolean;
+  selectedOption: string | null;
+  sections: Section[];
+}
 
 const aiActions = [
   { key: "rewrite", label: "Rewrite", icon: RefreshCw, credits: 3 },
@@ -113,6 +137,93 @@ function ScriptStudioPage() {
 
   const generateScriptFn = useServerFn(generateScriptAction);
   const rewriteScriptFn = useServerFn(rewriteScriptAction);
+
+  const navigate = useNavigate();
+  const { data: session } = useSession();
+  const search = Route.useSearch();
+  const getGenerationFn = useServerFn(getGeneration);
+
+  useEffect(() => {
+    if (!search.reedit) return;
+    getGenerationFn({ data: { generationId: search.reedit } })
+      .then((gen) => {
+        const input = gen.input as {
+          topic?: string;
+          platform?: string;
+          contentType?: string;
+          duration?: string;
+          tone?: string;
+          language?: string;
+          creativity?: number;
+          multiOption?: boolean;
+          audience?: string;
+        } | null;
+        if (input) {
+          setTopic(input.topic ?? "");
+          const matchedPlatform = platforms.find((p) => p.label === input.platform);
+          if (matchedPlatform) setPlatformId(matchedPlatform.id);
+          if (input.contentType) setContentType(input.contentType);
+          if (input.duration) setDuration(input.duration);
+          if (input.tone) setTone(input.tone);
+          if (input.language) setLanguage(input.language);
+          if (typeof input.creativity === "number") setCreativity([Math.round(input.creativity * 100)]);
+          if (typeof input.multiOption === "boolean") setMultiOption(input.multiOption);
+          setAudience(input.audience ?? "");
+        }
+        const options = (gen.output as ScriptOption[] | null) ?? [];
+        setScriptOptions(options);
+        setHasGenerated(options.length > 0);
+        if (options[0]) {
+          setSelectedOption(options[0].key);
+          setSections(options[0].sections);
+        } else {
+          setSelectedOption(null);
+          setSections([]);
+        }
+        toast.success("Reopened your original generation.");
+      })
+      .catch(() => toast.error("Couldn't load that creation."));
+    void navigate({ to: "/script-studio", search: {}, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.reedit]);
+
+  useDraftAutosave<ScriptStudioDraft>({
+    userId: session?.user?.id,
+    feature: "script-studio",
+    enabled: settings?.autosaveDrafts ?? true,
+    value: {
+      title,
+      topic,
+      platformId,
+      contentType,
+      duration,
+      audience,
+      tone,
+      language,
+      creativity,
+      multiOption,
+      scriptOptions,
+      hasGenerated,
+      selectedOption,
+      sections,
+    },
+    onRestore: (d) => {
+      setTitle(d.title ?? "");
+      setTopic(d.topic ?? "");
+      if (d.platformId) setPlatformId(d.platformId as typeof platformId);
+      if (d.contentType) setContentType(d.contentType);
+      if (d.duration) setDuration(d.duration);
+      setAudience(d.audience ?? "");
+      if (d.tone) setTone(d.tone);
+      if (d.language) setLanguage(d.language);
+      if (d.creativity) setCreativity(d.creativity);
+      if (typeof d.multiOption === "boolean") setMultiOption(d.multiOption);
+      if (d.scriptOptions) setScriptOptions(d.scriptOptions);
+      if (typeof d.hasGenerated === "boolean") setHasGenerated(d.hasGenerated);
+      if (d.selectedOption !== undefined) setSelectedOption(d.selectedOption);
+      if (d.sections) setSections(d.sections);
+    },
+  });
 
   const handlePlatformChange = (id: typeof platformId) => {
     setPlatformId(id);
@@ -167,7 +278,9 @@ function ScriptStudioPage() {
   const rewriteMutation = useMutation({
     mutationFn: async ({ key, targets }: { key: string; action: string; targets: Section[] }) => {
       const results = await Promise.all(
-        targets.map((s) => rewriteScriptFn({ data: { sectionText: s.text, action: rewriteActionFor(key) } })),
+        targets.map((s) =>
+          rewriteScriptFn({ data: { sectionText: s.text, action: rewriteActionFor(key), tone } }),
+        ),
       );
       return targets.map((s, i) => ({ id: s.id, text: results[i]!.text }));
     },

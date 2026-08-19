@@ -180,6 +180,10 @@ async function runScriptRewrite(request: TextProviderRequest): Promise<TextProvi
     instruction = `Rewrite this script section in a ${tone.toLowerCase()} tone, keeping the same meaning.`;
   } else {
     instruction = REWRITE_INSTRUCTIONS[action] ?? "Rewrite this script section to be clearer and sharper.";
+    const defaultTone = request.metadata?.["tone"];
+    if (typeof defaultTone === "string" && defaultTone.trim()) {
+      instruction += ` Use a ${defaultTone.toLowerCase()} tone.`;
+    }
   }
 
   const prompt = `${instruction}\n\nScript section:\n"""\n${sectionText}\n"""\n\nReturn only the rewritten text, no preamble or quotes.`;

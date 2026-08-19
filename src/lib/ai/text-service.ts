@@ -117,6 +117,7 @@ export interface RewriteScriptParams {
   userId: string;
   sectionText: string;
   action: string;
+  tone?: string;
   conversationId?: string;
   model?: string;
 }
@@ -136,13 +137,13 @@ export async function rewriteScript(params: RewriteScriptParams): Promise<Rewrit
     provider: config.provider,
     model,
     conversationId: params.conversationId,
-    input: { sectionText: params.sectionText, action: params.action },
+    input: { sectionText: params.sectionText, action: params.action, tone: params.tone },
   });
 
   try {
     const routed = await generateText(
       "script.rewrite",
-      { prompt: params.sectionText, metadata: { action: params.action } },
+      { prompt: params.sectionText, metadata: { action: params.action, tone: params.tone } },
       params.model,
     );
     const completed = usageLogger.complete(generation.id, {

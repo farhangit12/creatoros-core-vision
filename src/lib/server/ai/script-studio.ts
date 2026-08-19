@@ -102,6 +102,7 @@ const generateScriptSchema = z.object({
 const rewriteScriptSchema = z.object({
   sectionText: z.string().trim().min(1, "Section text is required.").max(4000),
   action: z.string().trim().min(1).max(60),
+  tone: z.string().trim().min(1).max(60).optional(),
   conversationId: z.string().min(1).optional(),
 });
 
@@ -145,13 +146,14 @@ export const rewriteScriptAction = createServerFn({ method: "POST" })
       await assertOwnedConversation(userId, data.conversationId);
     }
     const startedAt = new Date();
-    const { conversationId, ...rest } = data;
+    const { conversationId, tone, ...rest } = data;
 
     try {
       const result = await rewriteScript({
         userId,
         ...rest,
         ...(conversationId !== undefined ? { conversationId } : {}),
+        ...(tone !== undefined ? { tone } : {}),
       });
       await db.insert(aiGenerations).values(toDbGeneration(userId, result.generation));
       return { ...result, generation: toSerializableGeneration(result.generation) };
@@ -160,7 +162,7 @@ export const rewriteScriptAction = createServerFn({ method: "POST" })
         userId,
         operation: "script.rewrite",
         ...(conversationId !== undefined ? { conversationId } : {}),
-        input: rest,
+        input: { ...rest, ...(tone !== undefined ? { tone } : {}) },
         error,
         startedAt,
       });

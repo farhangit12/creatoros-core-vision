@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
@@ -47,6 +47,13 @@ import { cn } from "@/lib/utils";
 import { generateThumbnailAction } from "@/lib/server/ai/thumbnail-studio";
 import { uploadReferenceImageAction } from "@/lib/server/ai/image-studio";
 import { applyImageEdits } from "@/lib/image-edit-transforms";
+import { getGeneration } from "@/lib/server/ai/history";
+import { getUserSettings } from "@/lib/server/settings";
+import { useSession } from "@/lib/auth-client";
+import { platforms } from "@/lib/creator-data";
+import { useDraftAutosave } from "@/lib/local-draft-storage";
+
+const SETTINGS_QUERY_KEY = ["user-settings"] as const;
 
 const MAX_REFERENCE_IMAGE_BYTES = 8 * 1024 * 1024;
 const ALLOWED_REFERENCE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -67,8 +74,9 @@ function toExportUrl(url: string, format: string): string {
 }
 
 export const Route = createFileRoute("/_app/thumbnail-studio")({
-  validateSearch: (search: Record<string, unknown>): { referenceImageUrl?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { referenceImageUrl?: string; reedit?: string } => ({
     ...(typeof search["referenceImageUrl"] === "string" ? { referenceImageUrl: search["referenceImageUrl"] } : {}),
+    ...(typeof search["reedit"] === "string" ? { reedit: search["reedit"] } : {}),
   }),
   head: () => ({
     meta: [
@@ -94,6 +102,19 @@ type Variation = {
   rationale: string;
   url: string;
 };
+
+interface ThumbnailStudioDraft {
+  topic: string;
+  platformId: string;
+  ratio: string;
+  style: string;
+  count: (typeof counts)[number];
+  overlay: string;
+  fontSize: number;
+  position: Position;
+  referenceImageUrl: string | null;
+  referencePreview: string | null;
+}
 
 function aspectClass(ratio: string) {
   if (ratio === "9:16") return "aspect-[9/16]";
@@ -213,6 +234,76 @@ function ThumbnailStudioPage() {
     void navigate({ to: "/thumbnail-studio", search: {}, replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search.referenceImageUrl]);
+
+  const { data: session } = useSession();
+  const getGenerationFn = useServerFn(getGeneration);
+  const getUserSettingsFn = useServerFn(getUserSettings);
+  const { data: settings } = useQuery({
+    queryKey: SETTINGS_QUERY_KEY,
+    queryFn: () => getUserSettingsFn(),
+  });
+
+  useEffect(() => {
+    if (!search.reedit) return;
+    getGenerationFn({ data: { generationId: search.reedit } })
+      .then((gen) => {
+        const input = gen.input as {
+          topic?: string;
+          platform?: string;
+          aspectRatio?: string;
+          style?: string;
+          count?: number;
+          referenceImageUrl?: string;
+        } | null;
+        if (!input) return;
+        setTopic(input.topic ?? "");
+        const matchedPlatform = platforms.find((p) => p.label === input.platform);
+        if (matchedPlatform) setId(matchedPlatform.id);
+        if (input.aspectRatio) setRatio(input.aspectRatio);
+        if (input.style) setStyle(input.style);
+        if (input.count && (counts as readonly number[]).includes(input.count)) {
+          setCount(input.count as (typeof counts)[number]);
+        }
+        if (input.referenceImageUrl) {
+          setReferenceImageUrl(input.referenceImageUrl);
+          setReferencePreview(input.referenceImageUrl);
+        }
+        toast.success("Reopened your original generation.");
+      })
+      .catch(() => toast.error("Couldn't load that creation."));
+    void navigate({ to: "/thumbnail-studio", search: {}, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.reedit]);
+
+  useDraftAutosave<ThumbnailStudioDraft>({
+    userId: session?.user?.id,
+    feature: "thumbnail-studio",
+    enabled: settings?.autosaveDrafts ?? true,
+    value: {
+      topic,
+      platformId: id,
+      ratio,
+      style,
+      count,
+      overlay,
+      fontSize,
+      position,
+      referenceImageUrl,
+      referencePreview,
+    },
+    onRestore: (d) => {
+      setTopic(d.topic ?? "");
+      if (d.platformId) setId(d.platformId as typeof id);
+      if (d.ratio) setRatio(d.ratio);
+      if (d.style) setStyle(d.style);
+      if (d.count) setCount(d.count);
+      if (d.overlay) setOverlay(d.overlay);
+      if (d.fontSize) setFontSize(d.fontSize);
+      if (d.position) setPosition(d.position);
+      if (d.referenceImageUrl) setReferenceImageUrl(d.referenceImageUrl);
+      if (d.referencePreview) setReferencePreview(d.referencePreview);
+    },
+  });
 
   const generateThumbnailFn = useServerFn(generateThumbnailAction);
   const uploadReferenceImageFn = useServerFn(uploadReferenceImageAction);

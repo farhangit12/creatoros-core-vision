@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -77,10 +77,15 @@ import {
   type MessageRecord,
 } from "@/lib/server/ai/chat";
 import { getUserSettings } from "@/lib/server/settings";
+import { useSession } from "@/lib/auth-client";
+import { useDraftAutosave } from "@/lib/local-draft-storage";
 
 const SETTINGS_QUERY_KEY = ["user-settings"] as const;
 
 export const Route = createFileRoute("/_app/chat")({
+  validateSearch: (search: Record<string, unknown>): { conversationId?: string } => ({
+    ...(typeof search["conversationId"] === "string" ? { conversationId: search["conversationId"] } : {}),
+  }),
   head: () => ({
     meta: [
       { title: "AI Chat — CreatorOS AI" },
@@ -213,6 +218,31 @@ function ChatPageImpl() {
       setToneValue(settings.defaultAiTone);
     }
   }, [settings?.userId]);
+
+  const navigate = useNavigate();
+  const { data: session } = useSession();
+  const routeSearch = Route.useSearch();
+
+  // Opens a specific past conversation when navigated here from the Library
+  // page (?conversationId=...) -- distinct from the deliberate "always fresh
+  // New Chat" default above, which only applies when no conversation was
+  // explicitly requested.
+  useEffect(() => {
+    if (!routeSearch.conversationId) return;
+    setActiveId(routeSearch.conversationId);
+    void navigate({ to: "/chat", search: {}, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeSearch.conversationId]);
+
+  const { clearDraft } = useDraftAutosave<{ text: string }>({
+    userId: session?.user?.id,
+    feature: "chat",
+    enabled: settings?.autosaveDrafts ?? true,
+    value: { text: draft },
+    onRestore: (d) => {
+      if (d.text) setDraft(d.text);
+    },
+  });
 
   const [renameTarget, setRenameTarget] = useState<ConversationRecord | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -380,6 +410,7 @@ function ChatPageImpl() {
     ]);
     setVisuallyStopped(false);
     setDraft("");
+    clearDraft();
     setPendingAttachments([]);
     sendMutation.mutate({
       content,

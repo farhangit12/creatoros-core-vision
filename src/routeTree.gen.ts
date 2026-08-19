@@ -29,6 +29,7 @@ import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppFilesRouteImport } from './routes/_app.files'
 import { Route as AppImageStudioRouteImport } from './routes/_app.image-studio'
 import { Route as AppKnowledgeBaseRouteImport } from './routes/_app.knowledge-base'
+import { Route as AppLibraryRouteImport } from './routes/_app.library'
 import { Route as AppNotificationsRouteImport } from './routes/_app.notifications'
 import { Route as AppProfileRouteImport } from './routes/_app.profile'
 import { Route as AppProjectsRouteImport } from './routes/_app.projects'
@@ -141,6 +142,11 @@ const AppKnowledgeBaseRoute = AppKnowledgeBaseRouteImport.update({
   path: '/knowledge-base',
   getParentRoute: () => AppRoute,
 } as any)
+const AppLibraryRoute = AppLibraryRouteImport.update({
+  id: '/library',
+  path: '/library',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppNotificationsRoute = AppNotificationsRouteImport.update({
   id: '/notifications',
   path: '/notifications',
@@ -222,6 +228,7 @@ export interface FileRoutesByFullPath {
   '/files': typeof AppFilesRoute
   '/image-studio': typeof AppImageStudioRoute
   '/knowledge-base': typeof AppKnowledgeBaseRoute
+  '/library': typeof AppLibraryRoute
   '/notifications': typeof AppNotificationsRoute
   '/profile': typeof AppProfileRoute
   '/projects': typeof AppProjectsRouteWithChildren
@@ -255,6 +262,7 @@ export interface FileRoutesByTo {
   '/files': typeof AppFilesRoute
   '/image-studio': typeof AppImageStudioRoute
   '/knowledge-base': typeof AppKnowledgeBaseRoute
+  '/library': typeof AppLibraryRoute
   '/notifications': typeof AppNotificationsRoute
   '/profile': typeof AppProfileRoute
   '/repurpose': typeof AppRepurposeRoute
@@ -289,6 +297,7 @@ export interface FileRoutesById {
   '/_app/files': typeof AppFilesRoute
   '/_app/image-studio': typeof AppImageStudioRoute
   '/_app/knowledge-base': typeof AppKnowledgeBaseRoute
+  '/_app/library': typeof AppLibraryRoute
   '/_app/notifications': typeof AppNotificationsRoute
   '/_app/profile': typeof AppProfileRoute
   '/_app/projects': typeof AppProjectsRouteWithChildren
@@ -324,6 +333,7 @@ export interface FileRouteTypes {
     | '/files'
     | '/image-studio'
     | '/knowledge-base'
+    | '/library'
     | '/notifications'
     | '/profile'
     | '/projects'
@@ -357,6 +367,7 @@ export interface FileRouteTypes {
     | '/files'
     | '/image-studio'
     | '/knowledge-base'
+    | '/library'
     | '/notifications'
     | '/profile'
     | '/repurpose'
@@ -390,6 +401,7 @@ export interface FileRouteTypes {
     | '/_app/files'
     | '/_app/image-studio'
     | '/_app/knowledge-base'
+    | '/_app/library'
     | '/_app/notifications'
     | '/_app/profile'
     | '/_app/projects'
@@ -557,6 +569,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppKnowledgeBaseRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/library': {
+      id: '/_app/library'
+      path: '/library'
+      fullPath: '/library'
+      preLoaderRoute: typeof AppLibraryRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/notifications': {
       id: '/_app/notifications'
       path: '/notifications'
@@ -671,6 +690,7 @@ interface AppRouteChildren {
   AppFilesRoute: typeof AppFilesRoute
   AppImageStudioRoute: typeof AppImageStudioRoute
   AppKnowledgeBaseRoute: typeof AppKnowledgeBaseRoute
+  AppLibraryRoute: typeof AppLibraryRoute
   AppNotificationsRoute: typeof AppNotificationsRoute
   AppProfileRoute: typeof AppProfileRoute
   AppProjectsRoute: typeof AppProjectsRouteWithChildren
@@ -696,6 +716,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppFilesRoute: AppFilesRoute,
   AppImageStudioRoute: AppImageStudioRoute,
   AppKnowledgeBaseRoute: AppKnowledgeBaseRoute,
+  AppLibraryRoute: AppLibraryRoute,
   AppNotificationsRoute: AppNotificationsRoute,
   AppProfileRoute: AppProfileRoute,
   AppProjectsRoute: AppProjectsRouteWithChildren,

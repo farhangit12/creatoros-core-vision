@@ -58,6 +58,13 @@ import {
 import { applyImageEdits, hasImageEdits } from "@/lib/image-edit-transforms";
 import { listProjects } from "@/lib/server/projects";
 import { linkAssetToProject } from "@/lib/server/project-content";
+import { getGeneration } from "@/lib/server/ai/history";
+import { getUserSettings } from "@/lib/server/settings";
+import { useSession } from "@/lib/auth-client";
+import { platforms } from "@/lib/creator-data";
+import { useDraftAutosave } from "@/lib/local-draft-storage";
+
+const SETTINGS_QUERY_KEY = ["user-settings"] as const;
 
 const MAX_REFERENCE_IMAGE_BYTES = 8 * 1024 * 1024;
 const ALLOWED_REFERENCE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -80,6 +87,9 @@ function toExportUrl(url: string, opts: { format: string; width: number; height:
 }
 
 export const Route = createFileRoute("/_app/image-studio")({
+  validateSearch: (search: Record<string, unknown>): { reedit?: string } => ({
+    ...(typeof search["reedit"] === "string" ? { reedit: search["reedit"] } : {}),
+  }),
   head: () => ({
     meta: [
       { title: "Image Studio — CreatorOS AI" },
@@ -96,6 +106,19 @@ const styles = ["Photoreal", "Illustration", "3D render", "Editorial", "Graphic"
 const counts = [1, 2, 4] as const;
 
 type Img = { id: string; recommended: boolean; url: string };
+
+interface ImageStudioDraft {
+  prompt: string;
+  negativePrompt: string;
+  overlayText: string;
+  platformId: string;
+  useCase: string;
+  ratio: string;
+  style: string;
+  count: (typeof counts)[number];
+  referenceImageUrl: string | null;
+  referencePreview: string | null;
+}
 
 function aspectClass(ratio: string) {
   if (ratio === "9:16") return "aspect-[9/16]";
@@ -188,6 +211,83 @@ function ImageStudioPage() {
   const [highlights, setHighlights] = useState(0);
   const [upscale, setUpscale] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
+
+  const { data: session } = useSession();
+  const search = Route.useSearch();
+  const getGenerationFn = useServerFn(getGeneration);
+  const getUserSettingsFn = useServerFn(getUserSettings);
+  const { data: settings } = useQuery({
+    queryKey: SETTINGS_QUERY_KEY,
+    queryFn: () => getUserSettingsFn(),
+  });
+
+  useEffect(() => {
+    if (!search.reedit) return;
+    getGenerationFn({ data: { generationId: search.reedit } })
+      .then((gen) => {
+        const input = gen.input as {
+          prompt?: string;
+          negativePrompt?: string;
+          overlayText?: string;
+          platform?: string;
+          useCase?: string;
+          aspectRatio?: string;
+          style?: string;
+          count?: number;
+          referenceImageUrl?: string;
+        } | null;
+        if (!input) return;
+        setPrompt(input.prompt ?? "");
+        setNegativePrompt(input.negativePrompt ?? "");
+        setOverlayText(input.overlayText ?? "");
+        const matchedPlatform = platforms.find((p) => p.label === input.platform);
+        if (matchedPlatform) setId(matchedPlatform.id);
+        if (input.useCase) setUseCase(input.useCase);
+        if (input.aspectRatio) setRatio(input.aspectRatio);
+        if (input.style) setStyle(input.style);
+        if (input.count && (counts as readonly number[]).includes(input.count)) {
+          setCount(input.count as (typeof counts)[number]);
+        }
+        if (input.referenceImageUrl) {
+          setReferenceImageUrl(input.referenceImageUrl);
+          setReferencePreview(input.referenceImageUrl);
+        }
+        toast.success("Reopened your original generation.");
+      })
+      .catch(() => toast.error("Couldn't load that creation."));
+    void navigate({ to: "/image-studio", search: {}, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.reedit]);
+
+  useDraftAutosave<ImageStudioDraft>({
+    userId: session?.user?.id,
+    feature: "image-studio",
+    enabled: settings?.autosaveDrafts ?? true,
+    value: {
+      prompt,
+      negativePrompt,
+      overlayText,
+      platformId: id,
+      useCase,
+      ratio,
+      style,
+      count,
+      referenceImageUrl,
+      referencePreview,
+    },
+    onRestore: (d) => {
+      setPrompt(d.prompt ?? "");
+      setNegativePrompt(d.negativePrompt ?? "");
+      setOverlayText(d.overlayText ?? "");
+      if (d.platformId) setId(d.platformId as typeof id);
+      if (d.useCase) setUseCase(d.useCase);
+      if (d.ratio) setRatio(d.ratio);
+      if (d.style) setStyle(d.style);
+      if (d.count) setCount(d.count);
+      if (d.referenceImageUrl) setReferenceImageUrl(d.referenceImageUrl);
+      if (d.referencePreview) setReferencePreview(d.referencePreview);
+    },
+  });
 
   const generateImageFn = useServerFn(generateImageAction);
   const createVariationFn = useServerFn(createImageVariationAction);
