@@ -3,7 +3,7 @@ import { getRequest } from "@tanstack/react-start/server";
 import { and, count, desc, eq, gte, lte } from "drizzle-orm";
 import { db } from "@/db";
 import { auth } from "@/lib/auth";
-import { plannerItems, projects } from "@/db/schema";
+import { plannerItems, projectActivity, projects } from "@/db/schema";
 
 async function requireUserId(): Promise<string> {
   const session = await auth.api.getSession({ headers: getRequest().headers });
@@ -46,4 +46,34 @@ export const getDashboardSummary = createServerFn({ method: "GET" }).handler(asy
     scheduledCount: scheduledTotal?.value ?? 0,
     recentProjects,
   };
+});
+
+const RECENT_ACTIVITY_LIMIT = 8;
+
+// Workspace-wide activity trail: project_activity rows are already recorded
+// (real, not new) by projects.ts/project-content.ts/files.ts across every
+// project the user owns -- this just aggregates across all of them instead
+// of the one-project-at-a-time view listProjectActivity (project-content.ts)
+// already provides. Only project-scoped actions are covered (there's no
+// activity log for standalone chat/script/image generations outside a
+// project), so this is a real but partial trail, not a full app-wide feed.
+export const getRecentActivity = createServerFn({ method: "GET" }).handler(async () => {
+  const userId = await requireUserId();
+
+  const rows = await db
+    .select({
+      id: projectActivity.id,
+      action: projectActivity.action,
+      detail: projectActivity.detail,
+      createdAt: projectActivity.createdAt,
+      projectId: projectActivity.projectId,
+      projectName: projects.name,
+    })
+    .from(projectActivity)
+    .innerJoin(projects, eq(projectActivity.projectId, projects.id))
+    .where(eq(projectActivity.userId, userId))
+    .orderBy(desc(projectActivity.createdAt))
+    .limit(RECENT_ACTIVITY_LIMIT);
+
+  return rows;
 });

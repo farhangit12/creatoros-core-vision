@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
@@ -10,12 +10,13 @@ import {
   Copy,
   Download,
   ChevronDown,
-  Video,
   FolderKanban,
   Image as ImageIcon,
   Wand2,
   Eraser,
   RotateCcw,
+  X,
+  Loader2,
 } from "lucide-react";
 import { PageHeader, SectionLabel, EmptyState } from "@/components/app/primitives";
 import {
@@ -47,8 +48,36 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { createImageVariationAction, generateImageAction } from "@/lib/server/ai/image-studio";
+import {
+  createImageVariationAction,
+  generateImageAction,
+  uploadReferenceImageAction,
+} from "@/lib/server/ai/image-studio";
+import { applyImageEdits, hasImageEdits } from "@/lib/image-edit-transforms";
+import { listProjects } from "@/lib/server/projects";
+import { linkAssetToProject } from "@/lib/server/project-content";
+
+const MAX_REFERENCE_IMAGE_BYTES = 8 * 1024 * 1024;
+const ALLOWED_REFERENCE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error("Couldn't read that file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Same Cloudinary "force download" pattern already used by the Files module,
+ * generalized to also apply a format conversion and target dimensions via
+ * Cloudinary's own URL transforms -- no new backend needed. */
+function toExportUrl(url: string, opts: { format: string; width: number; height: number }): string {
+  const transform = `f_${opts.format},w_${opts.width},h_${opts.height},c_fill,fl_attachment`;
+  return url.replace("/upload/", `/upload/${transform}/`);
+}
 
 export const Route = createFileRoute("/_app/image-studio")({
   head: () => ({
@@ -79,10 +108,16 @@ function ImageFrame({
   ratio,
   className,
   url,
+  filter,
+  onLoad,
+  loading,
 }: {
   ratio: string;
   className?: string;
   url?: string;
+  filter?: string;
+  onLoad?: () => void;
+  loading?: boolean;
 }) {
   return (
     <div
@@ -93,10 +128,22 @@ function ImageFrame({
       )}
     >
       {url ? (
-        <img src={url} alt="" className="size-full object-cover" />
+        <img
+          src={url}
+          alt=""
+          className="size-full object-cover"
+          style={filter ? { filter } : undefined}
+          onLoad={onLoad}
+          onError={onLoad}
+        />
       ) : (
         <ImageIcon className="size-8 text-text-subtle/50" />
       )}
+      {loading ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+          <Loader2 className="size-5 animate-spin text-white" />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -106,11 +153,17 @@ function ImageStudioPage() {
   const { id, setId, platform } = usePlatform("instagram");
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
+  const [overlayText, setOverlayText] = useState("");
   const [useCase, setUseCase] = useState(useCases[0] ?? "Post");
   const [ratio, setRatio] = useState((platform.aspectRatios[0] ?? "16:9"));
   const [style, setStyle] = useState(styles[0] ?? "Photoreal");
-  const [refStrength, setRefStrength] = useState(50);
   const [count, setCount] = useState<(typeof counts)[number]>(4);
+
+  const [referencePreview, setReferencePreview] = useState<string | null>(null);
+  const [referenceImageUrl, setReferenceImageUrl] = useState<string | null>(null);
+  const [referenceUploading, setReferenceUploading] = useState(false);
+  const [referenceDragOver, setReferenceDragOver] = useState(false);
+  const referenceInputRef = useRef<HTMLInputElement>(null);
 
   const [status, setStatus] = useState<"idle" | "generating" | "done">("idle");
   const [images, setImages] = useState<Img[]>([]);
@@ -127,8 +180,66 @@ function ImageStudioPage() {
   const [warmth, setWarmth] = useState(0);
   const [bgState, setBgState] = useState<"idle" | "processing" | "done">("idle");
 
+  // Real, Cloudinary-rendered edits (unlike exposure/contrast/saturation/
+  // warmth above, which are CSS-only preview and never touch the exported
+  // file) -- these are baked into the actual URL used for both preview and
+  // export/download. Reset per-selection below.
+  const [shadows, setShadows] = useState(0);
+  const [highlights, setHighlights] = useState(0);
+  const [upscale, setUpscale] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+
   const generateImageFn = useServerFn(generateImageAction);
   const createVariationFn = useServerFn(createImageVariationAction);
+  const uploadReferenceImageFn = useServerFn(uploadReferenceImageAction);
+  const listProjectsFn = useServerFn(listProjects);
+  const linkAssetToProjectFn = useServerFn(linkAssetToProject);
+
+  const { data: projectOptions = [] } = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => listProjectsFn(),
+  });
+
+  const linkToProjectMutation = useMutation({
+    mutationFn: (params: { assetId: string; projectId: string }) => linkAssetToProjectFn({ data: params }),
+    onSuccess: (_result, variables) => {
+      const project = projectOptions.find((p) => p.id === variables.projectId);
+      toast.success(project ? `Added to ${project.name}` : "Added to project");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Couldn't add this image to the project.");
+    },
+  });
+
+  async function handleReferenceFile(file: File) {
+    if (!ALLOWED_REFERENCE_MIME_TYPES.has(file.type)) {
+      toast.error("Reference image must be JPEG, PNG, or WebP.");
+      return;
+    }
+    if (file.size > MAX_REFERENCE_IMAGE_BYTES) {
+      toast.error("Reference image must be 8MB or smaller.");
+      return;
+    }
+    const localPreview = URL.createObjectURL(file);
+    setReferencePreview(localPreview);
+    setReferenceUploading(true);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const result = await uploadReferenceImageFn({ data: { dataUrl, mimeType: file.type } });
+      setReferenceImageUrl(result.url);
+    } catch {
+      toast.error("Couldn't upload that reference image. Try again.");
+      setReferencePreview(null);
+    } finally {
+      setReferenceUploading(false);
+    }
+  }
+
+  function clearReferenceImage() {
+    if (referencePreview) URL.revokeObjectURL(referencePreview);
+    setReferencePreview(null);
+    setReferenceImageUrl(null);
+  }
 
   const generateMutation = useMutation({
     mutationFn: () =>
@@ -140,14 +251,16 @@ function ImageStudioPage() {
           ...(style ? { style } : {}),
           ...(useCase ? { useCase } : {}),
           platform: platform.label,
+          ...(referenceImageUrl ? { referenceImageUrl } : {}),
+          ...(overlayText.trim() ? { overlayText: overlayText.trim() } : {}),
         },
       }),
     onSuccess: (result) => {
       setImages(result.assets.map((a) => ({ id: a.id, recommended: a.recommended, url: a.url })));
       setStatus("done");
     },
-    onError: () => {
-      toast.error("Couldn't generate images. Try again.");
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Couldn't generate images. Try again.");
       setStatus("idle");
     },
   });
@@ -166,8 +279,8 @@ function ImageStudioPage() {
       setImages(result.assets.map((a) => ({ id: a.id, recommended: a.recommended, url: a.url })));
       setStatus("done");
     },
-    onError: () => {
-      toast.error("Couldn't create a variation. Try again.");
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Couldn't create a variation. Try again.");
       setStatus("done");
     },
   });
@@ -195,10 +308,44 @@ function ImageStudioPage() {
     setContrast(0);
     setSaturation(0);
     setWarmth(0);
+    setShadows(0);
+    setHighlights(0);
+    setUpscale(false);
   }
+
+  // Edits are per-image -- switching selection (a new generation, or picking
+  // a different variant) starts from a clean slate rather than silently
+  // carrying over the previous image's shadows/highlights/upscale state.
+  useEffect(() => {
+    setShadows(0);
+    setHighlights(0);
+    setUpscale(false);
+  }, [selected]);
 
   const selectedImage = images.find((i) => i.id === selected);
   const compareImages = images.filter((i) => compareIds.includes(i.id));
+  const editedImageUrl = selectedImage
+    ? applyImageEdits(selectedImage.url, { shadows, highlights, upscale })
+    : undefined;
+
+  useEffect(() => {
+    if (!selectedImage || !editedImageUrl) return;
+    setEditLoading(editedImageUrl !== selectedImage.url);
+  }, [editedImageUrl, selectedImage]);
+
+  // Live preview only (CSS filters on the on-screen frame) -- there's no
+  // server-side image processing here, so this doesn't affect the exported
+  // file. Real, visible feedback for the sliders rather than controls that
+  // silently do nothing.
+  const previewFilter = [
+    `brightness(${1 + exposure / 100})`,
+    `contrast(${1 + contrast / 100})`,
+    `saturate(${1 + saturation / 100})`,
+    warmth !== 0 ? `sepia(${Math.min(100, Math.abs(warmth))}%)` : "",
+    warmth < 0 ? `hue-rotate(${warmth}deg)` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div className="space-y-10">
@@ -208,7 +355,7 @@ function ImageStudioPage() {
         description="Generate and iterate on brand-consistent imagery, covers and social assets."
       />
 
-      <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="grid items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
         <Panel title="Input">
           <div className="space-y-5">
             <Field label="Prompt">
@@ -218,6 +365,18 @@ function ImageStudioPage() {
                 placeholder="Describe the image you want to generate…"
                 rows={4}
               />
+            </Field>
+            <Field label="Exact text to overlay (optional)">
+              <Input
+                value={overlayText}
+                onChange={(e) => setOverlayText(e.target.value)}
+                placeholder="e.g. SALE 50% OFF"
+                maxLength={120}
+              />
+              <p className="mt-1.5 text-[11px] leading-relaxed text-text-subtle">
+                Rendered as crisp real text over the image instead of leaving it to the AI, which
+                often draws text inaccurately.
+              </p>
             </Field>
             <Accordion type="single" collapsible>
               <AccordionItem value="negative" className="border-border-subtle">
@@ -247,15 +406,75 @@ function ImageStudioPage() {
               <ChipGroup options={styles} value={style} onChange={setStyle} />
             </Field>
             <Field label="Reference image" hint="Optional visual anchor for the generation.">
-              <div className="space-y-3">
-                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-surface-2/60 px-4 py-8 text-center opacity-70">
+              <input
+                ref={referenceInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleReferenceFile(file);
+                  e.target.value = "";
+                }}
+              />
+              {referencePreview ? (
+                <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-2/60 p-2.5">
+                  <div className="relative size-14 shrink-0 overflow-hidden rounded-md bg-surface-3">
+                    <img src={referencePreview} alt="" className="size-full object-cover" />
+                    {referenceUploading ? (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                        <Loader2 className="size-4 animate-spin text-white" />
+                      </div>
+                    ) : null}
+                  </div>
+                  <p className="flex-1 text-[12px] text-text-muted">
+                    {referenceUploading ? "Uploading…" : "Reference image ready"}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    onClick={clearReferenceImage}
+                    aria-label="Remove reference image"
+                  >
+                    <X className="size-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => referenceInputRef.current?.click()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      referenceInputRef.current?.click();
+                    }
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setReferenceDragOver(true);
+                  }}
+                  onDragLeave={() => setReferenceDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setReferenceDragOver(false);
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) void handleReferenceFile(file);
+                  }}
+                  className={cn(
+                    "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-8 text-center transition-colors duration-150",
+                    referenceDragOver
+                      ? "border-accent-brand/60 bg-accent-tint"
+                      : "border-border bg-surface-2/60 hover:border-accent-brand/40",
+                  )}
+                >
                   <UploadCloud className="size-5 text-text-subtle" />
                   <p className="text-[12px] text-text-subtle">Drag an image or browse</p>
+                  <p className="text-[10px] text-text-subtle/70">JPEG, PNG or WebP, up to 8MB</p>
                 </div>
-                <Field label={`Reference strength — ${refStrength}%`}>
-                  <Slider value={[refStrength]} min={0} max={100} onValueChange={([v]) => setRefStrength(v ?? refStrength)} />
-                </Field>
-              </div>
+              )}
             </Field>
             <Field label="Variations">
               <ChipGroup
@@ -361,11 +580,11 @@ function ImageStudioPage() {
                     selected={selected === img.id}
                     onSelect={() => setSelected(img.id)}
                     footer={
-                      <div className="flex gap-2">
+                      <div className="flex flex-col gap-2">
                         <Button
                           size="sm"
                           variant="outline"
-                          className="flex-1"
+                          className="w-full"
                           onClick={(e) => {
                             e.stopPropagation();
                             generate();
@@ -377,7 +596,7 @@ function ImageStudioPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="flex-1"
+                          className="w-full"
                           onClick={(e) => {
                             e.stopPropagation();
                             createVariation(img.id);
@@ -397,9 +616,25 @@ function ImageStudioPage() {
           </Panel>
 
           {selectedImage ? (
-            <Panel title="Basic editing">
-              <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_260px]">
-                <div className="space-y-5">
+            <Panel title="Basic editing" bodyClassName="space-y-6">
+              <div className="max-w-xs space-y-2">
+                <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-subtle">
+                  Preview
+                </p>
+                <ImageFrame
+                  ratio={ratio}
+                  url={editedImageUrl ?? selectedImage.url}
+                  filter={previewFilter}
+                  loading={editLoading}
+                  onLoad={() => setEditLoading(false)}
+                />
+              </div>
+
+              <div className="grid gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="space-y-4">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-subtle">
+                    Size
+                  </p>
                   <Field label="Crop presets">
                     <ChipGroup options={["16:9", "1:1", "9:16", "4:5"]} value={ratio} onChange={setRatio} />
                   </Field>
@@ -431,7 +666,13 @@ function ImageStudioPage() {
                     <span className="text-[12px] text-text-muted">Lock aspect ratio</span>
                     <Switch checked={lockAspect} onCheckedChange={setLockAspect} />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                </div>
+
+                <div className="space-y-4">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-subtle">
+                    Color adjustments — preview only
+                  </p>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-5">
                     <Field label={`Exposure — ${exposure}`}>
                       <Slider value={[exposure]} min={-50} max={50} onValueChange={([v]) => setExposure(v ?? exposure)} />
                     </Field>
@@ -445,28 +686,56 @@ function ImageStudioPage() {
                       <Slider value={[warmth]} min={-50} max={50} onValueChange={([v]) => setWarmth(v ?? warmth)} />
                     </Field>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button size="sm" variant="outline" onClick={resetAdjustments}>
-                      <RotateCcw className="size-3.5" />
-                      Reset
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={removeBackground} disabled={bgState === "processing"}>
-                      <Eraser className="size-3.5" />
-                      {bgState === "processing" ? "Processing…" : "Remove background"}
-                    </Button>
-                    {bgState === "done" ? (
-                      <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-subtle">
-                        Placeholder — connects later
-                      </span>
-                    ) : null}
+                </div>
+
+                <div className="space-y-4">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-subtle">
+                    Real edits — applied to preview &amp; export
+                  </p>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-5">
+                    <Field label={`Shadows — ${shadows}`} hint="Lifts shadow detail.">
+                      <Slider
+                        value={[shadows]}
+                        min={0}
+                        max={100}
+                        onValueChange={([v]) => setShadows(v ?? shadows)}
+                      />
+                    </Field>
+                    <Field label={`Highlights — ${highlights}`} hint="Negative recovers blown highlights.">
+                      <Slider
+                        value={[highlights]}
+                        min={-50}
+                        max={50}
+                        onValueChange={([v]) => setHighlights(v ?? highlights)}
+                      />
+                    </Field>
+                  </div>
+                  <div className="space-y-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[12px] text-text-muted">AI upscale</span>
+                      <Switch checked={upscale} onCheckedChange={setUpscale} />
+                    </div>
+                    <p className="text-[10px] text-text-subtle">
+                      4x resolution. First render can take a few seconds.
+                    </p>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-subtle">
-                    Preview
-                  </p>
-                  <ImageFrame ratio={ratio} url={selectedImage.url} />
-                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 border-t border-border-subtle pt-5">
+                <Button size="sm" variant="outline" onClick={resetAdjustments}>
+                  <RotateCcw className="size-3.5" />
+                  Reset all
+                </Button>
+                <Button size="sm" variant="outline" onClick={removeBackground} disabled={bgState === "processing"}>
+                  <Eraser className="size-3.5" />
+                  {bgState === "processing" ? "Processing…" : "Remove background"}
+                </Button>
+                {bgState === "done" ? (
+                  <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-subtle">
+                    Placeholder — connects later
+                  </span>
+                ) : null}
               </div>
             </Panel>
           ) : null}
@@ -474,10 +743,6 @@ function ImageStudioPage() {
           {selectedImage ? (
             <Panel title="Output" bodyClassName="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm">Select</Button>
-                <Button size="sm" variant="outline">
-                  Save to project
-                </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button size="sm" variant="outline">
@@ -487,20 +752,74 @@ function ImageStudioPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent>
-                    <DropdownMenuItem>PNG</DropdownMenuItem>
-                    <DropdownMenuItem>JPG</DropdownMenuItem>
-                    <DropdownMenuItem>WebP</DropdownMenuItem>
+                    {["png", "jpg", "webp"].map((format) => (
+                      <DropdownMenuItem
+                        key={format}
+                        onClick={() => {
+                          const a = document.createElement("a");
+                          a.href = toExportUrl(editedImageUrl ?? selectedImage.url, { format, width, height });
+                          a.click();
+                        }}
+                      >
+                        {format.toUpperCase()}
+                      </DropdownMenuItem>
+                    ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
               <SectionLabel>Next</SectionLabel>
-              <ContextActions
-                actions={[
-                  { label: "Use as thumbnail", icon: Wand2, onClick: () => navigate({ to: "/thumbnail-studio" }) },
-                  { label: "Use as project asset", icon: FolderKanban, onClick: () => navigate({ to: "/projects" }) },
-                  { label: "Send to Video Studio", icon: Video, onClick: () => navigate({ to: "/video-studio" }) },
-                ]}
-              />
+              <div className="flex flex-wrap items-center gap-1.5">
+                <ContextActions
+                  actions={[
+                    {
+                      label: "Use as thumbnail",
+                      icon: Wand2,
+                      onClick: () =>
+                        navigate({
+                          to: "/thumbnail-studio",
+                          search: { referenceImageUrl: editedImageUrl ?? selectedImage.url },
+                        }),
+                    },
+                  ]}
+                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface-2 px-2.5 text-[12px] text-text-muted transition-colors duration-150 hover:border-accent-brand/40 hover:text-foreground focus-visible:outline-2 focus-visible:outline-accent-brand"
+                    >
+                      <FolderKanban className="size-3.5" />
+                      Use as project asset
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56 space-y-1">
+                    {projectOptions.length === 0 ? (
+                      <p className="px-2 py-1.5 text-[12px] text-text-subtle">
+                        No projects yet.{" "}
+                        <button
+                          type="button"
+                          className="text-accent-brand hover:underline"
+                          onClick={() => navigate({ to: "/projects" })}
+                        >
+                          Create one
+                        </button>
+                      </p>
+                    ) : (
+                      projectOptions.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          disabled={linkToProjectMutation.isPending}
+                          onClick={() => linkToProjectMutation.mutate({ assetId: selectedImage.id, projectId: p.id })}
+                          className="block w-full rounded-md px-2 py-1.5 text-left text-[12px] text-text-muted hover:bg-surface-2 hover:text-foreground disabled:opacity-50"
+                        >
+                          {p.name}
+                        </button>
+                      ))
+                    )}
+                  </PopoverContent>
+                </Popover>
+              </div>
             </Panel>
           ) : null}
         </div>

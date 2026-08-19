@@ -118,6 +118,7 @@ const generateThumbnailSchema = z.object({
   style: z.string().trim().max(100).optional(),
   platform: z.string().trim().max(60).optional(),
   conversationId: z.string().min(1).optional(),
+  referenceImageUrl: z.string().url().optional(),
 });
 
 export const generateThumbnailAction = createServerFn({ method: "POST" })
@@ -128,12 +129,13 @@ export const generateThumbnailAction = createServerFn({ method: "POST" })
       await assertOwnedConversation(userId, data.conversationId);
     }
     const startedAt = new Date();
-    const { conversationId, style, platform, count, ...rest } = data;
+    const { conversationId, style, platform, count, referenceImageUrl, ...rest } = data;
     const input = {
       ...rest,
       count: count ?? 1,
       ...(style !== undefined ? { style } : {}),
       ...(platform !== undefined ? { platform } : {}),
+      ...(referenceImageUrl !== undefined ? { referenceImageUrl } : {}),
     };
 
     try {

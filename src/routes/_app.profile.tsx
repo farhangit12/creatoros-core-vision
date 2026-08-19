@@ -1,5 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -21,7 +21,12 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { authClient } from "@/lib/auth-client";
-import { getUserProfile, updateUserProfile } from "@/lib/server/settings";
+import { getAvatarUploadSignature, getUserProfile, updateUserAvatar, updateUserProfile } from "@/lib/server/settings";
+import { uploadFileToCloudinary } from "@/lib/files-upload-client";
+import { toAvatarUrl } from "@/lib/files";
+
+const ALLOWED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 
 export const Route = createFileRoute("/_app/profile")({
   head: () => ({
@@ -180,9 +185,52 @@ function initialsFor(name: string) {
 }
 
 function ProfilePage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const getUserProfileFn = useServerFn(getUserProfile);
   const updateUserProfileFn = useServerFn(updateUserProfile);
+  const getAvatarUploadSignatureFn = useServerFn(getAvatarUploadSignature);
+  const updateUserAvatarFn = useServerFn(updateUserAvatar);
+  const [signingOut, setSigningOut] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAvatarFile = async (file: File) => {
+    if (!ALLOWED_AVATAR_TYPES.includes(file.type)) {
+      toast.error("Avatar must be a JPEG, PNG or WebP image.");
+      return;
+    }
+    if (file.size > MAX_AVATAR_BYTES) {
+      toast.error("Avatar image must be 5MB or smaller.");
+      return;
+    }
+    setUploadingAvatar(true);
+    try {
+      const signature = await getAvatarUploadSignatureFn();
+      const result = await uploadFileToCloudinary(file, signature, () => {});
+      await updateUserAvatarFn({ data: { url: result.url, mimeType: file.type, size: file.size } });
+      queryClient.invalidateQueries({ queryKey: PROFILE_QUERY_KEY });
+      await authClient.getSession();
+      toast.success("Avatar updated");
+    } catch (error) {
+      toast.error("Couldn't update your avatar.", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      await authClient.revokeOtherSessions();
+    } catch {
+      // Best-effort: still sign this session out even if revoking others fails.
+    }
+    await authClient.signOut();
+    navigate({ to: "/login" });
+  };
 
   const { data: profile, isLoading } = useQuery({
     queryKey: PROFILE_QUERY_KEY,
@@ -208,35 +256,61 @@ function ProfilePage() {
     }
   }, [profile?.id]);
 
+  const [emailChangePending, setEmailChangePending] = useState(false);
+
   const updateMutation = useMutation({
     mutationFn: (input: Parameters<typeof updateUserProfileFn>[0]) => updateUserProfileFn(input),
-    onSuccess: (updated) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PROFILE_QUERY_KEY });
-      // Email changes aren't persisted here (that needs better-auth's own
-      // verified-change flow) — snap the field back to the real value.
-      setEmail(updated.email);
-      setEditing(false);
-      setSaved(true);
-      window.setTimeout(() => setSaved(false), 2500);
     },
     onError: () => {
       toast.error("Couldn't save your profile. Try again.");
     },
   });
 
-  const save = () => {
-    if (emailInvalid) return;
-    updateMutation.mutate({
-      data: {
-        name: name.trim() || undefined,
-        role: role.trim(),
-        website: website.trim(),
-        bio: bio.trim(),
-      },
-    });
+  const save = async () => {
+    if (emailInvalid || !profile) return;
+    const trimmedEmail = email.trim();
+    const emailChanged = trimmedEmail.toLowerCase() !== profile.email.toLowerCase();
+
+    try {
+      await updateMutation.mutateAsync({
+        data: {
+          name: name.trim() || undefined,
+          role: role.trim(),
+          website: website.trim(),
+          bio: bio.trim(),
+        },
+      });
+    } catch {
+      return; // updateMutation.onError already showed a toast
+    }
+
+    if (emailChanged) {
+      setEmailChangePending(true);
+      const { error } = await authClient.changeEmail({
+        newEmail: trimmedEmail,
+        callbackURL: "/profile",
+      });
+      setEmailChangePending(false);
+      // The real email hasn't changed yet either way — it only updates once
+      // the confirmation link (sent to the new address) is clicked.
+      setEmail(profile.email);
+      if (error) {
+        toast.error(error.message ?? "Couldn't start the email change. Try again.");
+      } else {
+        toast.success("Confirmation email sent", {
+          description: `Check ${trimmedEmail} and click the link to confirm your new email.`,
+        });
+      }
+    }
+
+    setEditing(false);
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 2500);
   };
 
-  const saving = updateMutation.isPending;
+  const saving = updateMutation.isPending || emailChangePending;
   const displayName = profile?.name ?? "";
   const joined = profile ? format(profile.createdAt, "MMMM yyyy") : "";
 
@@ -303,9 +377,17 @@ function ProfilePage() {
         </section>
       ) : (
         <section className="flex flex-col gap-6 rounded-2xl border border-border bg-surface p-7 sm:flex-row sm:items-center">
-          <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-surface-3 font-mono text-[18px] text-foreground">
-            {initialsFor(displayName)}
-          </span>
+          {profile?.image ? (
+            <img
+              src={toAvatarUrl(profile.image, 128)}
+              alt=""
+              className="size-16 shrink-0 rounded-2xl object-cover"
+            />
+          ) : (
+            <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-surface-3 font-mono text-[18px] text-foreground">
+              {initialsFor(displayName)}
+            </span>
+          )}
           <div className="min-w-0 flex-1">
             <p className="text-[20px] font-medium tracking-[-0.02em] text-foreground">
               {displayName}
@@ -314,8 +396,30 @@ function ProfilePage() {
               {profile?.email} · Joined {joined}
             </p>
           </div>
-          <Button variant="outline" size="sm" disabled={!editing}>
-            Change avatar
+          <input
+            ref={avatarInputRef}
+            type="file"
+            accept={ALLOWED_AVATAR_TYPES.join(",")}
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleAvatarFile(file);
+              e.target.value = "";
+            }}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!editing || uploadingAvatar}
+            onClick={() => avatarInputRef.current?.click()}
+          >
+            {uploadingAvatar ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" /> Uploading…
+              </>
+            ) : (
+              "Change avatar"
+            )}
           </Button>
         </section>
       )}
@@ -355,6 +459,10 @@ function ProfilePage() {
               />
               {emailInvalid ? (
                 <p className="text-xs text-danger">Enter a valid email address.</p>
+              ) : editing && profile && email.trim().toLowerCase() !== profile.email.toLowerCase() ? (
+                <p className="text-xs text-text-subtle">
+                  You'll need to confirm this from a link sent to the new address before it takes effect.
+                </p>
               ) : null}
             </div>
             <div className="space-y-2">
@@ -433,12 +541,19 @@ function ProfilePage() {
               </span>
             </span>
             <Button
-              asChild
               variant="outline"
               size="sm"
               className="border-danger/30 text-danger hover:bg-danger/10 hover:text-danger"
+              onClick={handleSignOut}
+              disabled={signingOut}
             >
-              <Link to="/login">Sign out</Link>
+              {signingOut ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" /> Signing out…
+                </>
+              ) : (
+                "Sign out"
+              )}
             </Button>
           </li>
         </ul>

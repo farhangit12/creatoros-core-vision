@@ -33,6 +33,7 @@ function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const emailInvalid = email.length > 0 && !email.includes("@");
 
@@ -47,6 +48,7 @@ function LoginPage() {
     const { error: signInError } = await authClient.signIn.email({
       email,
       password,
+      rememberMe,
     });
     setLoading(false);
     if (signInError) {
@@ -129,7 +131,11 @@ function LoginPage() {
         </div>
 
         <div className="flex items-center gap-2.5">
-          <Checkbox id="remember" defaultChecked />
+          <Checkbox
+            id="remember"
+            checked={rememberMe}
+            onCheckedChange={(v) => setRememberMe(v === true)}
+          />
           <Label htmlFor="remember" className="text-[13px] text-text-muted">
             Keep me signed in
           </Label>

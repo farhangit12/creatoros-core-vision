@@ -181,26 +181,28 @@ function BillingPage() {
       <section>
         <SectionLabel>Plan comparison</SectionLabel>
         <div className="overflow-hidden rounded-xl border border-border bg-surface">
-          <table className="w-full text-left text-[13px]">
-            <thead>
-              <tr className="border-b border-border-subtle text-text-subtle">
-                <th className="px-5 py-3.5 font-normal">Feature</th>
-                <th className="px-5 py-3.5 font-normal">Free</th>
-                <th className="bg-accent-tint/30 px-5 py-3.5 font-medium text-foreground">Pro</th>
-                <th className="px-5 py-3.5 font-normal">Scale</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-subtle">
-              {comparisonRows.map((row) => (
-                <tr key={row.feature}>
-                  <td className="px-5 py-3.5 font-medium text-foreground">{row.feature}</td>
-                  <td className="px-5 py-3.5 text-text-muted">{row.free}</td>
-                  <td className="bg-accent-tint/30 px-5 py-3.5 text-foreground">{row.pro}</td>
-                  <td className="px-5 py-3.5 text-text-muted">{row.scale}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[13px]">
+              <thead>
+                <tr className="border-b border-border-subtle text-text-subtle">
+                  <th className="px-5 py-3.5 font-normal">Feature</th>
+                  <th className="px-5 py-3.5 font-normal">Free</th>
+                  <th className="bg-accent-tint/30 px-5 py-3.5 font-medium text-foreground">Pro</th>
+                  <th className="px-5 py-3.5 font-normal">Scale</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-border-subtle">
+                {comparisonRows.map((row) => (
+                  <tr key={row.feature}>
+                    <td className="px-5 py-3.5 font-medium text-foreground">{row.feature}</td>
+                    <td className="px-5 py-3.5 text-text-muted">{row.free}</td>
+                    <td className="bg-accent-tint/30 px-5 py-3.5 text-foreground">{row.pro}</td>
+                    <td className="px-5 py-3.5 text-text-muted">{row.scale}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 

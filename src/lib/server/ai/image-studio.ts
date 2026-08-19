@@ -8,8 +8,13 @@ import { auth } from "@/lib/auth";
 import { aiAssets, aiConversations, aiGenerations } from "@/db/schema";
 import { createVariation, generateImages } from "@/lib/ai/image-service";
 import { resolveOperation } from "@/lib/ai/registry";
+import { uploadImageToCloudinary } from "@/lib/ai/providers/image/cloudinary-upload";
 import type { GenerationRecord, ImageAsset } from "@/lib/ai/types";
 import type { ImageOperation } from "@/lib/ai/operations";
+
+const REFERENCE_IMAGE_FOLDER = "creatoros-ai-assets/references";
+const MAX_REFERENCE_IMAGE_BYTES = 8 * 1024 * 1024;
+const ALLOWED_REFERENCE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
@@ -127,6 +132,13 @@ const generateImageSchema = z.object({
   useCase: z.string().trim().max(100).optional(),
   platform: z.string().trim().max(60).optional(),
   conversationId: z.string().min(1).optional(),
+  referenceImageUrl: z.string().url().optional(),
+  overlayText: z.string().trim().min(1).max(120).optional(),
+});
+
+const uploadReferenceImageSchema = z.object({
+  dataUrl: z.string().min(1).max(Math.ceil((MAX_REFERENCE_IMAGE_BYTES * 4) / 3) + 200),
+  mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
 });
 
 const createVariationSchema = z.object({
@@ -137,6 +149,33 @@ const createVariationSchema = z.object({
   conversationId: z.string().min(1).optional(),
 });
 
+/**
+ * Uploads a user-supplied reference image (e.g. for image.generate img2img)
+ * to Cloudinary via the AI pipeline's own server-only upload helper -- the
+ * browser sends bytes as a data URL in the request body rather than doing a
+ * signed direct-to-Cloudinary upload, since the file only needs to become a
+ * fetchable URL for the provider, not a persisted "asset" in its own right.
+ */
+export const uploadReferenceImageAction = createServerFn({ method: "POST" })
+  .validator((input: unknown) => uploadReferenceImageSchema.parse(input))
+  .handler(async ({ data }) => {
+    await requireUserId();
+    const commaIndex = data.dataUrl.indexOf(",");
+    if (!data.dataUrl.startsWith("data:") || commaIndex === -1) {
+      throw new Error("Invalid image data.");
+    }
+    const base64 = data.dataUrl.slice(commaIndex + 1);
+    const bytes = Buffer.from(base64, "base64");
+    if (bytes.byteLength > MAX_REFERENCE_IMAGE_BYTES) {
+      throw new Error("Reference image must be 8MB or smaller.");
+    }
+    if (!ALLOWED_REFERENCE_MIME_TYPES.has(data.mimeType)) {
+      throw new Error("Unsupported image type.");
+    }
+    const uploaded = await uploadImageToCloudinary(bytes, data.mimeType, REFERENCE_IMAGE_FOLDER);
+    return { url: uploaded.url };
+  });
+
 export const generateImageAction = createServerFn({ method: "POST" })
   .validator((input: unknown) => generateImageSchema.parse(input))
   .handler(async ({ data }) => {
@@ -145,12 +184,14 @@ export const generateImageAction = createServerFn({ method: "POST" })
       await assertOwnedConversation(userId, data.conversationId);
     }
     const startedAt = new Date();
-    const { conversationId, style, useCase, platform, ...rest } = data;
+    const { conversationId, style, useCase, platform, referenceImageUrl, overlayText, ...rest } = data;
     const input = {
       ...rest,
       ...(style !== undefined ? { style } : {}),
       ...(useCase !== undefined ? { useCase } : {}),
       ...(platform !== undefined ? { platform } : {}),
+      ...(referenceImageUrl !== undefined ? { referenceImageUrl } : {}),
+      ...(overlayText !== undefined ? { overlayText } : {}),
     };
 
     try {

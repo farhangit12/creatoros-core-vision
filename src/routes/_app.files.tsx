@@ -23,6 +23,7 @@ import {
   Pencil,
   Loader2,
   AlertCircle,
+  FolderKanban,
 } from "lucide-react";
 import { EmptyState } from "@/components/app/primitives";
 import { Button } from "@/components/ui/button";
@@ -78,6 +79,8 @@ import {
   toggleFileFavourite,
   type FileRecord,
 } from "@/lib/server/files";
+import { listProjects } from "@/lib/server/projects";
+import { linkFileToProject, unlinkFileFromProject } from "@/lib/server/project-content";
 
 export const Route = createFileRoute("/_app/files")({
   head: () => ({
@@ -127,10 +130,20 @@ export function FilesPage() {
   const toggleFavouriteFn = useServerFn(toggleFileFavourite);
   const deleteFileFn = useServerFn(deleteFile);
 
+  const listProjectsFn = useServerFn(listProjects);
+  const linkFileToProjectFn = useServerFn(linkFileToProject);
+  const unlinkFileFromProjectFn = useServerFn(unlinkFileFromProject);
+
   const { data: files = [], isLoading } = useQuery({
     queryKey: FILES_QUERY_KEY,
     queryFn: () => listFilesFn(),
   });
+
+  const { data: projectOptions = [] } = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => listProjectsFn(),
+  });
+  const projectsById = useMemo(() => new Map(projectOptions.map((p) => [p.id, p.name])), [projectOptions]);
 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -142,6 +155,7 @@ export function FilesPage() {
   const [previewFile, setPreviewFile] = useState<FileRecord | null>(null);
   const [renameTarget, setRenameTarget] = useState<FileRecord | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [projectLinkTarget, setProjectLinkTarget] = useState<FileRecord | null>(null);
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -177,6 +191,21 @@ export function FilesPage() {
     mutationFn: (id: string) => toggleFavouriteFn({ data: { id } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: FILES_QUERY_KEY }),
     onError: () => toast.error("Couldn't update file. Try again."),
+  });
+
+  const linkProjectMutation = useMutation({
+    mutationFn: (vars: { fileId: string; projectId: string | null; previousProjectId: string | null }) =>
+      vars.projectId
+        ? linkFileToProjectFn({ data: { fileId: vars.fileId, projectId: vars.projectId } })
+        : unlinkFileFromProjectFn({ data: { fileId: vars.fileId, projectId: vars.previousProjectId! } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: FILES_QUERY_KEY });
+      toast.success("Project updated");
+      setProjectLinkTarget(null);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Couldn't update the file's project.");
+    },
   });
 
   const deleteMutation = useMutation({
@@ -316,6 +345,7 @@ export function FilesPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={`Dismiss ${u.fileName}`}
                 className="size-7 text-text-subtle hover:text-foreground"
                 onClick={() => setUploads((prev) => prev.filter((x) => x.id !== u.id))}
               >
@@ -367,6 +397,7 @@ export function FilesPage() {
             type="button"
             onClick={() => setView("grid")}
             aria-pressed={view === "grid"}
+            aria-label="Grid view"
             className={cn("grid size-9 place-items-center text-text-muted", view === "grid" ? "bg-surface-2 text-foreground" : "hover:text-foreground")}
           >
             <LayoutGrid className="size-4" />
@@ -375,6 +406,7 @@ export function FilesPage() {
             type="button"
             onClick={() => setView("list")}
             aria-pressed={view === "list"}
+            aria-label="List view"
             className={cn("grid size-9 place-items-center border-l border-border text-text-muted", view === "list" ? "bg-surface-2 text-foreground" : "hover:text-foreground")}
           >
             <List className="size-4" />
@@ -436,6 +468,7 @@ export function FilesPage() {
             <FileCard
               key={f.id}
               file={f}
+              projectName={f.projectId ? (projectsById.get(f.projectId) ?? null) : null}
               selected={selected.includes(f.id)}
               onToggleSelect={() => toggleSelect(f.id)}
               onToggleFavourite={() => favouriteMutation.mutate(f.id)}
@@ -444,6 +477,7 @@ export function FilesPage() {
                 setRenameTarget(f);
                 setRenameValue(f.name);
               }}
+              onLinkProject={() => setProjectLinkTarget(f)}
               onDelete={() => deleteMutation.mutate(f.id)}
             />
           ))}
@@ -454,6 +488,7 @@ export function FilesPage() {
             <FileRow
               key={f.id}
               file={f}
+              projectName={f.projectId ? (projectsById.get(f.projectId) ?? null) : null}
               selected={selected.includes(f.id)}
               onToggleSelect={() => toggleSelect(f.id)}
               onToggleFavourite={() => favouriteMutation.mutate(f.id)}
@@ -462,6 +497,7 @@ export function FilesPage() {
                 setRenameTarget(f);
                 setRenameValue(f.name);
               }}
+              onLinkProject={() => setProjectLinkTarget(f)}
               onDelete={() => deleteMutation.mutate(f.id)}
             />
           ))}
@@ -585,6 +621,64 @@ export function FilesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!projectLinkTarget} onOpenChange={(open) => !open && setProjectLinkTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Project</DialogTitle>
+            <DialogDescription>
+              {projectLinkTarget ? `Link "${projectLinkTarget.name}" to a project.` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-72 space-y-1 overflow-y-auto">
+            <button
+              type="button"
+              disabled={linkProjectMutation.isPending}
+              onClick={() =>
+                projectLinkTarget &&
+                linkProjectMutation.mutate({
+                  fileId: projectLinkTarget.id,
+                  projectId: null,
+                  previousProjectId: projectLinkTarget.projectId,
+                })
+              }
+              className={cn(
+                "flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-[13px] hover:bg-surface-2",
+                !projectLinkTarget?.projectId ? "text-foreground" : "text-text-muted",
+              )}
+            >
+              No project
+              {!projectLinkTarget?.projectId ? <span className="text-accent-brand">✓</span> : null}
+            </button>
+            {projectOptions.length === 0 ? (
+              <p className="px-3 py-2 text-[12px] text-text-subtle">You don't have any projects yet.</p>
+            ) : (
+              projectOptions.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  disabled={linkProjectMutation.isPending}
+                  onClick={() =>
+                    projectLinkTarget &&
+                    linkProjectMutation.mutate({
+                      fileId: projectLinkTarget.id,
+                      projectId: p.id,
+                      previousProjectId: projectLinkTarget.projectId,
+                    })
+                  }
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-[13px] hover:bg-surface-2",
+                    projectLinkTarget?.projectId === p.id ? "text-foreground" : "text-text-muted",
+                  )}
+                >
+                  {p.name}
+                  {projectLinkTarget?.projectId === p.id ? <span className="text-accent-brand">✓</span> : null}
+                </button>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -594,18 +688,26 @@ function FileMenu({
   onRename,
   onFavourite,
   favourite,
+  onLinkProject,
   onDelete,
 }: {
   onOpen: () => void;
   onRename: () => void;
   onFavourite: () => void;
   favourite: boolean;
+  onLinkProject: () => void;
   onDelete: () => void;
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="size-7 text-text-subtle hover:text-foreground" onClick={(e) => e.stopPropagation()}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="File options"
+          className="size-7 text-text-subtle hover:text-foreground"
+          onClick={(e) => e.stopPropagation()}
+        >
           <MoreHorizontal className="size-4" />
         </Button>
       </DropdownMenuTrigger>
@@ -616,6 +718,9 @@ function FileMenu({
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onFavourite}>
           <Star className="size-3.5" /> {favourite ? "Unfavourite" : "Favourite"}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onLinkProject}>
+          <FolderKanban className="size-3.5" /> Project
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem className="text-danger focus:text-danger" onClick={onDelete}>
@@ -628,19 +733,23 @@ function FileMenu({
 
 function FileCard({
   file,
+  projectName,
   selected,
   onToggleSelect,
   onToggleFavourite,
   onOpen,
   onRename,
+  onLinkProject,
   onDelete,
 }: {
   file: FileRecord;
+  projectName: string | null;
   selected: boolean;
   onToggleSelect: () => void;
   onToggleFavourite: () => void;
   onOpen: () => void;
   onRename: () => void;
+  onLinkProject: () => void;
   onDelete: () => void;
 }) {
   const Icon = typeIcon[file.fileType as FileKind];
@@ -659,7 +768,14 @@ function FileCard({
           onClick={(e) => e.stopPropagation()}
           onCheckedChange={onToggleSelect}
         />
-        <FileMenu onOpen={onOpen} onRename={onRename} onFavourite={onToggleFavourite} favourite={file.favourite} onDelete={onDelete} />
+        <FileMenu
+          onOpen={onOpen}
+          onRename={onRename}
+          onFavourite={onToggleFavourite}
+          favourite={file.favourite}
+          onLinkProject={onLinkProject}
+          onDelete={onDelete}
+        />
       </div>
       <div className="grid h-16 place-items-center overflow-hidden rounded-lg bg-surface-3">
         {file.fileType === "image" ? (
@@ -670,6 +786,11 @@ function FileCard({
       </div>
       <div>
         <p className="truncate text-[12px] text-foreground">{file.name}</p>
+        {projectName ? (
+          <p className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-text-subtle">
+            <FolderKanban className="size-3 shrink-0" /> {projectName}
+          </p>
+        ) : null}
         <div className="mt-1 flex items-center justify-between">
           <p className="font-mono text-[10px] text-text-subtle">{formatFileSize(file.size)}</p>
           <button
@@ -678,6 +799,8 @@ function FileCard({
               e.stopPropagation();
               onToggleFavourite();
             }}
+            aria-label={file.favourite ? `Unfavourite ${file.name}` : `Favourite ${file.name}`}
+            aria-pressed={file.favourite}
             className="text-text-muted hover:text-warning"
           >
             <Star className={cn("size-3.5", file.favourite && "fill-warning text-warning")} />
@@ -690,19 +813,23 @@ function FileCard({
 
 function FileRow({
   file,
+  projectName,
   selected,
   onToggleSelect,
   onToggleFavourite,
   onOpen,
   onRename,
+  onLinkProject,
   onDelete,
 }: {
   file: FileRecord;
+  projectName: string | null;
   selected: boolean;
   onToggleSelect: () => void;
   onToggleFavourite: () => void;
   onOpen: () => void;
   onRename: () => void;
+  onLinkProject: () => void;
   onDelete: () => void;
 }) {
   const Icon = typeIcon[file.fileType as FileKind];
@@ -715,6 +842,11 @@ function FileRow({
       <Checkbox checked={selected} onClick={(e) => e.stopPropagation()} onCheckedChange={onToggleSelect} />
       <Icon className="size-4 shrink-0 text-text-subtle" />
       <p className="min-w-0 flex-1 truncate text-[13px] text-foreground">{file.name}</p>
+      {projectName ? (
+        <span className="hidden max-w-32 shrink-0 items-center gap-1 truncate text-[11px] text-text-subtle lg:flex">
+          <FolderKanban className="size-3 shrink-0" /> {projectName}
+        </span>
+      ) : null}
       <span className="hidden w-20 shrink-0 font-mono text-[11px] text-text-subtle sm:block">{formatFileSize(file.size)}</span>
       <span className="hidden w-28 shrink-0 font-mono text-[11px] text-text-subtle md:block">
         {format(new Date(file.updatedAt), "MMM d, yyyy")}
@@ -725,12 +857,21 @@ function FileRow({
           e.stopPropagation();
           onToggleFavourite();
         }}
+        aria-label={file.favourite ? `Unfavourite ${file.name}` : `Favourite ${file.name}`}
+        aria-pressed={file.favourite}
         className="grid size-7 shrink-0 place-items-center text-text-muted hover:text-warning"
       >
         <Star className={cn("size-3.5", file.favourite && "fill-warning text-warning")} />
       </button>
       <div onClick={(e) => e.stopPropagation()}>
-        <FileMenu onOpen={onOpen} onRename={onRename} onFavourite={onToggleFavourite} favourite={file.favourite} onDelete={onDelete} />
+        <FileMenu
+          onOpen={onOpen}
+          onRename={onRename}
+          onFavourite={onToggleFavourite}
+          favourite={file.favourite}
+          onLinkProject={onLinkProject}
+          onDelete={onDelete}
+        />
       </div>
     </div>
   );

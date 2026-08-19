@@ -5,7 +5,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { auth } from "@/lib/auth";
-import { files, fileTypeValues } from "@/db/schema";
+import { files, fileTypeValues, projectActivity, projects } from "@/db/schema";
 import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE_BYTES, classifyMimeType } from "@/lib/files";
 import { createUploadSignature, deleteFromCloudinary, type UploadSignature } from "./files-storage";
 
@@ -62,6 +62,7 @@ const createFileSchema = z.object({
   storageKey: z.string().trim().min(1).max(300),
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
+  projectId: z.string().min(1).optional(),
 });
 
 /** Persists the metadata for a file the browser already uploaded directly to Cloudinary. */
@@ -73,11 +74,21 @@ export const createFileRecord = createServerFn({ method: "POST" })
     if (!classification) {
       throw new Error(`Unsupported file type: ${data.mimeType}`);
     }
+    if (data.projectId) {
+      const [project] = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(and(eq(projects.id, data.projectId), eq(projects.userId, userId)));
+      if (!project) {
+        throw new Error("Project not found.");
+      }
+    }
     const [created] = await db
       .insert(files)
       .values({
         id: randomUUID(),
         userId,
+        projectId: data.projectId ?? null,
         name: data.name,
         mimeType: data.mimeType,
         fileType: classification.fileType,
@@ -89,7 +100,17 @@ export const createFileRecord = createServerFn({ method: "POST" })
         height: data.height ?? null,
       })
       .returning();
-    return assertRow(created, "Failed to save file.");
+    const file = assertRow(created, "Failed to save file.");
+    if (data.projectId) {
+      await db.insert(projectActivity).values({
+        id: randomUUID(),
+        projectId: data.projectId,
+        userId,
+        action: "File uploaded",
+        detail: data.name,
+      });
+    }
+    return file;
   });
 
 const fileIdSchema = z.object({ id: z.string().min(1) });

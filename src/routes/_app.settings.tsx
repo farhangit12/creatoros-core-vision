@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Check, Laptop, Loader2, Moon, Sun } from "lucide-react";
+import { z } from "zod";
+import { AlertCircle, Check, Laptop, Loader2, Moon, Sun } from "lucide-react";
 import { PageHeader } from "@/components/app/primitives";
 import { WireLine } from "@/components/app/studio-kit";
 import { Switch } from "@/components/ui/switch";
@@ -17,13 +18,37 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { tones } from "@/lib/creator-data";
 import { getUserProfile, getUserSettings, updateUserProfile, updateUserSettings } from "@/lib/server/settings";
 import { authClient, useSession } from "@/lib/auth-client";
 import { applyTheme, type ThemeSetting } from "@/lib/theme";
 
+const sections = [
+  "Account",
+  "Appearance",
+  "Notifications",
+  "Security",
+  "Preferences",
+] as const;
+
+type Section = (typeof sections)[number];
+
+const searchSchema = z.object({
+  section: z.enum(sections).optional(),
+});
+
 export const Route = createFileRoute("/_app/settings")({
+  validateSearch: searchSchema,
   head: () => ({
     meta: [
       { title: "Settings — CreatorOS AI" },
@@ -41,16 +66,6 @@ export const Route = createFileRoute("/_app/settings")({
   }),
   component: SettingsPage,
 });
-
-const sections = [
-  "Account",
-  "Appearance",
-  "Notifications",
-  "Security",
-  "Preferences",
-] as const;
-
-type Section = (typeof sections)[number];
 
 const PROFILE_QUERY_KEY = ["user-profile"] as const;
 const SETTINGS_QUERY_KEY = ["user-settings"] as const;
@@ -190,7 +205,125 @@ function ActiveSessionsSection() {
   );
 }
 
+function DeleteAccountDialog() {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [confirmText, setConfirmText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const confirmed = confirmText.trim().toUpperCase() === "DELETE";
+
+  const reset = () => {
+    setPassword("");
+    setConfirmText("");
+    setError(null);
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!password) {
+      setError("Enter your current password to confirm.");
+      return;
+    }
+    if (!confirmed) {
+      setError('Type "DELETE" to confirm.');
+      return;
+    }
+    setSubmitting(true);
+    const { error: deleteError } = await authClient.deleteUser({ password });
+    setSubmitting(false);
+    if (deleteError) {
+      setError(deleteError.message ?? "Couldn't delete your account. Try again.");
+      return;
+    }
+    navigate({ to: "/login" });
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) reset();
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="border-danger/30 text-danger hover:bg-danger/10 hover:text-danger"
+        >
+          Delete
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Delete your account</DialogTitle>
+          <DialogDescription>
+            This permanently removes your account, projects, files, generations and every
+            other record tied to it. This cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={submit} noValidate>
+          {error ? (
+            <div
+              role="alert"
+              className="flex gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 text-[13px] leading-relaxed text-foreground"
+            >
+              <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
+              <span>{error}</span>
+            </div>
+          ) : null}
+          <div className="space-y-2">
+            <Label htmlFor="delete-password">Current password</Label>
+            <Input
+              id="delete-password"
+              type="password"
+              autoComplete="current-password"
+              className="h-10"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="delete-confirm">
+              Type <span className="font-mono">DELETE</span> to confirm
+            </Label>
+            <Input
+              id="delete-confirm"
+              className="h-10"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="destructive"
+              disabled={submitting || !password || !confirmed}
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" /> Deleting…
+                </>
+              ) : (
+                "Delete my account"
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function SettingsPage() {
+  const { section: sectionParam } = Route.useSearch();
   const queryClient = useQueryClient();
   const getUserProfileFn = useServerFn(getUserProfile);
   const updateUserProfileFn = useServerFn(updateUserProfile);
@@ -208,7 +341,7 @@ function SettingsPage() {
 
   const isLoading = profileLoading || settingsLoading;
 
-  const [section, setSection] = useState<Section>("Account");
+  const [section, setSection] = useState<Section>(sectionParam ?? "Account");
   const [displayName, setDisplayName] = useState("");
   const [notifyProductUpdates, setNotifyProductUpdates] = useState(true);
   const [notifyAiUpdates, setNotifyAiUpdates] = useState(true);
@@ -236,6 +369,10 @@ function SettingsPage() {
   }
 
   useEffect(syncFromServer, [profile?.id, settings?.userId]);
+
+  useEffect(() => {
+    if (sectionParam) setSection(sectionParam);
+  }, [sectionParam]);
 
   function selectTheme(next: ThemeSetting) {
     setTheme(next);
@@ -324,15 +461,7 @@ function SettingsPage() {
                   <Row
                     title="Delete account"
                     description="Permanently remove your account and all data."
-                    control={
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="border-danger/30 text-danger hover:bg-danger/10 hover:text-danger"
-                      >
-                        Delete
-                      </Button>
-                    }
+                    control={<DeleteAccountDialog />}
                   />
                 </>
               ) : null}
@@ -400,8 +529,8 @@ function SettingsPage() {
                   />
                   <Row
                     title="Security/account alerts"
-                    description="Important security notices and session updates."
-                    control={<Switch defaultChecked disabled />}
+                    description="Not available yet — no security alert emails are sent by CreatorOS today."
+                    control={<Switch checked={false} disabled />}
                   />
                 </>
               ) : null}

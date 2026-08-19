@@ -1,8 +1,20 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
+import {
+  addDays,
+  addMonths,
+  addWeeks,
+  endOfMonth,
+  endOfWeek,
+  format,
+  isSameDay,
+  isSameMonth,
+  startOfMonth,
+  startOfWeek,
+} from "date-fns";
 import {
   AlertTriangle,
   CalendarRange,
@@ -49,7 +61,17 @@ import {
   type PlannerItemRecord,
 } from "@/lib/server/planner";
 
+const PLATFORM_IDS = ["youtube", "instagram", "tiktok", "linkedin", "x"] as const;
+
 export const Route = createFileRoute("/_app/content-planner")({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { title?: string; platform?: (typeof PLATFORM_IDS)[number] } => ({
+    ...(typeof search["title"] === "string" ? { title: search["title"] } : {}),
+    ...(PLATFORM_IDS.includes(search["platform"] as (typeof PLATFORM_IDS)[number])
+      ? { platform: search["platform"] as (typeof PLATFORM_IDS)[number] }
+      : {}),
+  }),
   head: () => ({
     meta: [
       { title: "Content Planner — CreatorOS AI" },
@@ -71,7 +93,6 @@ export const Route = createFileRoute("/_app/content-planner")({
 
 type Stage = (typeof pipelineStages)[number];
 
-const monthLabel = "March 2025";
 const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const stageTone: Record<Stage, "neutral" | "accent" | "success" | "warning"> = {
@@ -83,13 +104,6 @@ const stageTone: Record<Stage, "neutral" | "accent" | "success" | "warning"> = {
   Published: "success",
 };
 
-/** No date picker exists yet — the grid only captures a day-of-month, so we anchor
- * it to the current month/year to keep the "scheduled" dashboard stat meaningful. */
-function scheduledDateForDay(day: number) {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), day);
-}
-
 function PlatformIcon({ id, className }: { id: PlatformId; className?: string }) {
   const p = platforms.find((pl) => pl.id === id)!;
   return <p.icon className={cn("size-3.5 text-text-subtle", className)} />;
@@ -100,22 +114,37 @@ type FormValues = {
   platform: PlatformId;
   projectId: string | null;
   stage: Stage;
-  day: number;
+  date: Date;
 };
 
 const NO_PROJECT_VALUE = "none";
 
+function toDateInputValue(date: Date): string {
+  return format(date, "yyyy-MM-dd");
+}
+
+function fromDateInputValue(value: string, fallback: Date): Date {
+  if (!value) return fallback;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return fallback;
+  return new Date(year, month - 1, day);
+}
+
 function ContentItemDialog({
   open,
   onOpenChange,
+  isEdit,
   initial,
+  defaultDate,
   projectOptions,
   onSubmit,
   submitting,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  initial?: FormValues | undefined;
+  isEdit: boolean;
+  initial?: Partial<FormValues> | undefined;
+  defaultDate: Date;
   projectOptions: { id: string; name: string }[];
   onSubmit: (values: FormValues) => void;
   submitting: boolean;
@@ -124,16 +153,14 @@ function ContentItemDialog({
   const [platform, setPlatform] = useState<PlatformId>(initial?.platform ?? "youtube");
   const [projectId, setProjectId] = useState<string>(initial?.projectId ?? NO_PROJECT_VALUE);
   const [stage, setStage] = useState<Stage>(initial?.stage ?? "Idea");
-  const [day, setDay] = useState(initial?.day ?? 10);
-
-  const isEdit = Boolean(initial);
+  const [date, setDate] = useState<Date>(initial?.date ?? defaultDate);
 
   function reset() {
     setTitle(initial?.title ?? "");
     setPlatform(initial?.platform ?? "youtube");
     setProjectId(initial?.projectId ?? NO_PROJECT_VALUE);
     setStage(initial?.stage ?? "Idea");
-    setDay(initial?.day ?? 10);
+    setDate(initial?.date ?? defaultDate);
   }
 
   return (
@@ -193,11 +220,9 @@ function ContentItemDialog({
             <div className="space-y-2">
               <Label className="text-[12px] text-text-muted">Date</Label>
               <Input
-                type="number"
-                min={1}
-                max={31}
-                value={day}
-                onChange={(e) => setDay(Number(e.target.value) || 1)}
+                type="date"
+                value={toDateInputValue(date)}
+                onChange={(e) => setDate(fromDateInputValue(e.target.value, date))}
               />
             </div>
           </div>
@@ -214,7 +239,7 @@ function ContentItemDialog({
                 platform,
                 projectId: projectId === NO_PROJECT_VALUE ? null : projectId,
                 stage,
-                day,
+                date,
               })
             }
           >
@@ -247,6 +272,7 @@ function CardActionsMenu({
         <button
           type="button"
           onClick={(e) => e.stopPropagation()}
+          aria-label={`Options for ${card.title}`}
           className="grid size-5 shrink-0 place-items-center rounded text-text-subtle hover:text-foreground"
         >
           <MoreHorizontal className="size-3.5" />
@@ -351,8 +377,8 @@ function ContentPlannerPage() {
           platform: values.platform,
           projectId: values.projectId,
           stage: values.stage,
-          day: values.day,
-          scheduledAt: scheduledDateForDay(values.day),
+          day: values.date.getDate(),
+          scheduledAt: values.date,
         },
       }),
     onSuccess: () => {
@@ -380,8 +406,8 @@ function ContentPlannerPage() {
           platform: values.platform,
           projectId: values.projectId,
           stage: values.stage,
-          day: values.day,
-          scheduledAt: scheduledDateForDay(values.day),
+          day: values.date.getDate(),
+          scheduledAt: values.date,
         },
       }),
     onSuccess: () => {
@@ -421,11 +447,42 @@ function ContentPlannerPage() {
   });
 
   const [view, setView] = useState<"Month" | "Week" | "Day">("Month");
+  const [viewDate, setViewDate] = useState<Date>(new Date());
   const [platformFilter, setPlatformFilter] = useState<string>("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
-  const [dialogState, setDialogState] = useState<{ mode: "create" } | { mode: "edit"; card: PlannerItemRecord } | null>(null);
+  const [dialogState, setDialogState] = useState<
+    | { mode: "create"; prefill?: { title: string; platform: PlatformId } }
+    | { mode: "edit"; card: PlannerItemRecord }
+    | null
+  >(null);
+
+  const search = Route.useSearch();
+  useEffect(() => {
+    if (!search.title) return;
+    setDialogState({
+      mode: "create",
+      prefill: { title: search.title, platform: search.platform ?? "youtube" },
+    });
+    void navigate({ to: "/content-planner", search: {}, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.title, search.platform]);
+
+  function goToPrevious() {
+    setViewDate((d) => (view === "Month" ? addMonths(d, -1) : view === "Week" ? addWeeks(d, -1) : addDays(d, -1)));
+  }
+
+  function goToNext() {
+    setViewDate((d) => (view === "Month" ? addMonths(d, 1) : view === "Week" ? addWeeks(d, 1) : addDays(d, 1)));
+  }
+
+  const headerLabel =
+    view === "Month"
+      ? format(viewDate, "MMMM yyyy")
+      : view === "Week"
+        ? `${format(startOfWeek(viewDate), "MMM d")} – ${format(endOfWeek(viewDate), "MMM d, yyyy")}`
+        : format(viewDate, "EEEE, MMM d, yyyy");
 
   const filtered = cards.filter(
     (c) =>
@@ -436,15 +493,30 @@ function ContentPlannerPage() {
 
   const hasFilters = platformFilter !== "all" || projectFilter !== "all" || stageFilter !== "all";
 
+  const monthGridDays = useMemo(() => {
+    const gridStart = startOfWeek(startOfMonth(viewDate));
+    const gridEnd = endOfWeek(endOfMonth(viewDate));
+    const days: Date[] = [];
+    for (let d = gridStart; d <= gridEnd; d = addDays(d, 1)) {
+      days.push(d);
+    }
+    return days;
+  }, [viewDate]);
+
+  const weekViewDays = useMemo(() => {
+    const weekStart = startOfWeek(viewDate);
+    return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  }, [viewDate]);
+
   function handleDragStart(e: React.DragEvent, id: string) {
     e.dataTransfer.setData("text/card-id", id);
   }
 
-  function handleDropOnDay(e: React.DragEvent, day: number) {
+  function handleDropOnDate(e: React.DragEvent, date: Date) {
     e.preventDefault();
     const id = e.dataTransfer.getData("text/card-id");
     if (id) {
-      updateMutation.mutate({ data: { id, day, scheduledAt: scheduledDateForDay(day) } });
+      updateMutation.mutate({ data: { id, day: date.getDate(), scheduledAt: date } });
     }
     setDragOverDay(null);
   }
@@ -479,16 +551,18 @@ function ContentPlannerPage() {
     );
   }
 
-  const dialogInitial: FormValues | undefined =
+  const dialogInitial: Partial<FormValues> | undefined =
     dialogState?.mode === "edit"
       ? {
           title: dialogState.card.title,
           platform: dialogState.card.platform as PlatformId,
           projectId: dialogState.card.projectId,
           stage: dialogState.card.stage as Stage,
-          day: dialogState.card.day,
+          date: new Date(dialogState.card.scheduledAt),
         }
-      : undefined;
+      : dialogState?.mode === "create"
+        ? dialogState.prefill
+        : undefined;
 
   return (
     <div className="space-y-12">
@@ -509,7 +583,9 @@ function ContentPlannerPage() {
         onOpenChange={(open) => {
           if (!open) setDialogState(null);
         }}
+        isEdit={dialogState?.mode === "edit"}
         initial={dialogInitial}
+        defaultDate={viewDate}
         projectOptions={projectOptions}
         submitting={createMutation.isPending || editMutation.isPending}
         onSubmit={(values) => {
@@ -539,9 +615,23 @@ function ContentPlannerPage() {
             ))}
           </div>
           <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-text-subtle">
-            <ChevronLeft className="size-3.5" />
-            {monthLabel}
-            <ChevronRight className="size-3.5" />
+            <button
+              type="button"
+              onClick={goToPrevious}
+              aria-label={`Previous ${view.toLowerCase()}`}
+              className="rounded p-0.5 text-text-subtle transition-colors hover:text-foreground"
+            >
+              <ChevronLeft className="size-3.5" />
+            </button>
+            {headerLabel}
+            <button
+              type="button"
+              onClick={goToNext}
+              aria-label={`Next ${view.toLowerCase()}`}
+              className="rounded p-0.5 text-text-subtle transition-colors hover:text-foreground"
+            >
+              <ChevronRight className="size-3.5" />
+            </button>
           </div>
         </div>
 
@@ -605,23 +695,34 @@ function ContentPlannerPage() {
                 {d}
               </div>
             ))}
-            {Array.from({ length: 35 }, (_, i) => i + 1).map((day) => {
-              const dayCards = filtered.filter((c) => c.day === day);
+            {monthGridDays.map((date) => {
+              const dayCards = filtered.filter((c) => isSameDay(new Date(c.scheduledAt), date));
+              const key = date.getTime();
+              const inCurrentMonth = isSameMonth(date, viewDate);
+              const isToday = isSameDay(date, new Date());
               return (
                 <div
-                  key={day}
+                  key={key}
                   onDragOver={(e) => {
                     e.preventDefault();
-                    setDragOverDay(day);
+                    setDragOverDay(key);
                   }}
-                  onDragLeave={() => setDragOverDay((d) => (d === day ? null : d))}
-                  onDrop={(e) => handleDropOnDay(e, day)}
+                  onDragLeave={() => setDragOverDay((d) => (d === key ? null : d))}
+                  onDrop={(e) => handleDropOnDate(e, date)}
                   className={cn(
                     "min-h-[104px] space-y-1.5 bg-surface p-1.5 transition-colors duration-100",
-                    dragOverDay === day && "bg-accent-tint",
+                    !inCurrentMonth && "opacity-40",
+                    dragOverDay === key && "bg-accent-tint",
                   )}
                 >
-                  <p className="px-0.5 font-mono text-[10px] text-text-subtle">{day}</p>
+                  <p
+                    className={cn(
+                      "px-0.5 font-mono text-[10px] text-text-subtle",
+                      isToday && "font-semibold text-accent-brand",
+                    )}
+                  >
+                    {date.getDate()}
+                  </p>
                   {dayCards.length === 0 ? (
                     <p className="px-0.5 text-[10px] text-text-subtle/60">No content</p>
                   ) : (
@@ -633,50 +734,52 @@ function ContentPlannerPage() {
           </div>
         ) : view === "Week" ? (
           <div className="grid grid-cols-7 gap-px overflow-hidden rounded-xl border border-border bg-border">
-            {weekdayLabels.map((d, i) => (
-              <div key={d} className="bg-surface-2 px-2 py-2 text-center font-mono text-[10px] uppercase tracking-[0.12em] text-text-subtle">
-                {d} {i + 3}
+            {weekViewDays.map((date) => (
+              <div key={date.getTime()} className="bg-surface-2 px-2 py-2 text-center font-mono text-[10px] uppercase tracking-[0.12em] text-text-subtle">
+                {format(date, "EEE d")}
               </div>
             ))}
-            {["Morning", "Midday", "Evening"].map((slot) =>
-              weekdayLabels.map((_, i) => {
-                const day = i + 3;
-                const slotCards = filtered.filter((c) => c.day === day);
-                return (
-                  <div
-                    key={`${slot}-${day}`}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setDragOverDay(day);
-                    }}
-                    onDrop={(e) => handleDropOnDay(e, day)}
-                    className={cn(
-                      "min-h-[84px] space-y-1.5 bg-surface p-1.5",
-                      dragOverDay === day && "bg-accent-tint",
-                    )}
-                  >
-                    <p className="px-0.5 font-mono text-[9px] uppercase tracking-[0.1em] text-text-subtle">{slot}</p>
-                    {slotCards.map((c) => renderCard(c))}
-                  </div>
-                );
-              }),
-            )}
+            {weekViewDays.map((date) => {
+              const dayCards = filtered.filter((c) => isSameDay(new Date(c.scheduledAt), date));
+              const key = date.getTime();
+              return (
+                <div
+                  key={key}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragOverDay(key);
+                  }}
+                  onDragLeave={() => setDragOverDay((d) => (d === key ? null : d))}
+                  onDrop={(e) => handleDropOnDate(e, date)}
+                  className={cn(
+                    "min-h-[220px] space-y-1.5 bg-surface p-1.5 transition-colors duration-100",
+                    dragOverDay === key && "bg-accent-tint",
+                  )}
+                >
+                  {dayCards.length === 0 ? (
+                    <p className="px-0.5 text-[10px] text-text-subtle/60">No content</p>
+                  ) : (
+                    dayCards.map((c) => renderCard(c))
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div
             onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => handleDropOnDay(e, 10)}
+            onDrop={(e) => handleDropOnDate(e, viewDate)}
             className="space-y-3 rounded-xl border border-border bg-surface p-5"
           >
-            {filtered.filter((c) => c.day === 10).length === 0 ? (
+            {filtered.filter((c) => isSameDay(new Date(c.scheduledAt), viewDate)).length === 0 ? (
               <EmptyState
                 icon={CalendarX2}
-                title="Nothing scheduled today"
-                description="Drag a card here or use Quick create to add something for today."
+                title="Nothing scheduled for this day"
+                description="Drag a card here or use Quick create to add something for this day."
               />
             ) : (
               filtered
-                .filter((c) => c.day === 10)
+                .filter((c) => isSameDay(new Date(c.scheduledAt), viewDate))
                 .map((c) => {
                   const projectName = c.projectId ? (projectsById.get(c.projectId) ?? "Unknown project") : "No project";
                   return (

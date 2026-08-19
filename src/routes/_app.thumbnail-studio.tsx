@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -13,10 +13,10 @@ import {
   Maximize2,
   Download,
   ChevronDown,
-  Video,
-  FileText,
   CalendarDays,
   Columns2,
+  X,
+  Loader2,
 } from "lucide-react";
 import { PageHeader, SectionLabel } from "@/components/app/primitives";
 import {
@@ -35,6 +35,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,8 +45,31 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { generateThumbnailAction } from "@/lib/server/ai/thumbnail-studio";
+import { uploadReferenceImageAction } from "@/lib/server/ai/image-studio";
+import { applyImageEdits } from "@/lib/image-edit-transforms";
+
+const MAX_REFERENCE_IMAGE_BYTES = 8 * 1024 * 1024;
+const ALLOWED_REFERENCE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error("Couldn't read that file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Same Cloudinary "force download" + format/resize transform pattern used
+ * by Image Studio's export -- no new backend needed. */
+function toExportUrl(url: string, format: string): string {
+  return url.replace("/upload/", `/upload/f_${format},fl_attachment/`);
+}
 
 export const Route = createFileRoute("/_app/thumbnail-studio")({
+  validateSearch: (search: Record<string, unknown>): { referenceImageUrl?: string } => ({
+    ...(typeof search["referenceImageUrl"] === "string" ? { referenceImageUrl: search["referenceImageUrl"] } : {}),
+  }),
   head: () => ({
     meta: [
       { title: "Thumbnail Studio — CreatorOS AI" },
@@ -85,6 +109,8 @@ function ThumbnailFrame({
   fontSize,
   position,
   url,
+  onLoad,
+  loading,
 }: {
   ratio: string;
   className?: string;
@@ -92,6 +118,8 @@ function ThumbnailFrame({
   fontSize?: number;
   position?: Position;
   url?: string;
+  onLoad?: () => void;
+  loading?: boolean;
 }) {
   const posClass: Record<Position, string> = {
     TL: "items-start justify-start text-left",
@@ -114,10 +142,21 @@ function ThumbnailFrame({
       )}
     >
       {url ? (
-        <img src={url} alt="" className="absolute inset-0 size-full object-cover" />
+        <img
+          src={url}
+          alt=""
+          className="absolute inset-0 size-full object-cover"
+          onLoad={onLoad}
+          onError={onLoad}
+        />
       ) : (
         <ImageIcon className="absolute left-1/2 top-1/2 size-8 -translate-x-1/2 -translate-y-1/2 text-text-subtle/50" />
       )}
+      {loading ? (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40">
+          <Loader2 className="size-5 animate-spin text-white" />
+        </div>
+      ) : null}
       {overlay ? (
         <span
           className="relative z-10 m-3 max-w-full break-words font-medium leading-tight text-foreground drop-shadow"
@@ -131,6 +170,7 @@ function ThumbnailFrame({
 }
 
 function ThumbnailStudioPage() {
+  const navigate = useNavigate();
   const { id, setId, platform } = usePlatform("youtube");
   const [topic, setTopic] = useState("");
   const [ratio, setRatio] = useState((platform.aspectRatios[0] ?? "16:9"));
@@ -145,12 +185,67 @@ function ThumbnailStudioPage() {
   const [overlay, setOverlay] = useState("");
   const [fontSize, setFontSize] = useState(22);
   const [position, setPosition] = useState<Position>("BC");
-  const [posX, setPosX] = useState(50);
-  const [posY, setPosY] = useState(50);
   const [history, setHistory] = useState<string[]>([]);
   const [future, setFuture] = useState<string[]>([]);
 
+  // Real, Cloudinary-rendered edits, baked into the actual preview/export
+  // URL (unlike the overlay text above, which is a client-side CSS overlay
+  // only) -- same mechanism as Image Studio's Shadows/Highlights/Upscale.
+  const [shadows, setShadows] = useState(0);
+  const [highlights, setHighlights] = useState(0);
+  const [upscale, setUpscale] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+
+  const [referencePreview, setReferencePreview] = useState<string | null>(null);
+  const [referenceImageUrl, setReferenceImageUrl] = useState<string | null>(null);
+  const [referenceUploading, setReferenceUploading] = useState(false);
+  const [referenceDragOver, setReferenceDragOver] = useState(false);
+  const referenceInputRef = useRef<HTMLInputElement>(null);
+
+  // Picks up an image handed off from Image Studio's "Use as thumbnail"
+  // action -- already a real, hosted Cloudinary URL, so it's used directly
+  // as the reference image with no re-upload needed.
+  const search = Route.useSearch();
+  useEffect(() => {
+    if (!search.referenceImageUrl) return;
+    setReferenceImageUrl(search.referenceImageUrl);
+    setReferencePreview(search.referenceImageUrl);
+    void navigate({ to: "/thumbnail-studio", search: {}, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.referenceImageUrl]);
+
   const generateThumbnailFn = useServerFn(generateThumbnailAction);
+  const uploadReferenceImageFn = useServerFn(uploadReferenceImageAction);
+
+  async function handleReferenceFile(file: File) {
+    if (!ALLOWED_REFERENCE_MIME_TYPES.has(file.type)) {
+      toast.error("Reference image must be JPEG, PNG, or WebP.");
+      return;
+    }
+    if (file.size > MAX_REFERENCE_IMAGE_BYTES) {
+      toast.error("Reference image must be 8MB or smaller.");
+      return;
+    }
+    const localPreview = URL.createObjectURL(file);
+    setReferencePreview(localPreview);
+    setReferenceUploading(true);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const result = await uploadReferenceImageFn({ data: { dataUrl, mimeType: file.type } });
+      setReferenceImageUrl(result.url);
+    } catch {
+      toast.error("Couldn't upload that reference image. Try again.");
+      setReferencePreview(null);
+    } finally {
+      setReferenceUploading(false);
+    }
+  }
+
+  function clearReferenceImage() {
+    if (referencePreview) URL.revokeObjectURL(referencePreview);
+    setReferencePreview(null);
+    setReferenceImageUrl(null);
+  }
 
   const generateMutation = useMutation({
     mutationFn: () =>
@@ -161,6 +256,7 @@ function ThumbnailStudioPage() {
           count,
           ...(style ? { style } : {}),
           platform: platform.label,
+          ...(referenceImageUrl ? { referenceImageUrl } : {}),
         },
       }),
     onSuccess: (result) => {
@@ -175,8 +271,8 @@ function ThumbnailStudioPage() {
       );
       setStatus("done");
     },
-    onError: () => {
-      toast.error("Couldn't generate thumbnails. Try again.");
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Couldn't generate thumbnails. Try again.");
       setStatus("idle");
     },
   });
@@ -217,11 +313,25 @@ function ThumbnailStudioPage() {
     });
   }
 
+  useEffect(() => {
+    setShadows(0);
+    setHighlights(0);
+    setUpscale(false);
+  }, [selected]);
+
   const selectedVariation = variations.find((v) => v.id === selected);
   const compareVariations = useMemo(
     () => variations.filter((v) => compareIds.includes(v.id)),
     [variations, compareIds],
   );
+  const editedVariationUrl = selectedVariation
+    ? applyImageEdits(selectedVariation.url, { shadows, highlights, upscale })
+    : undefined;
+
+  useEffect(() => {
+    if (!selectedVariation || !editedVariationUrl) return;
+    setEditLoading(editedVariationUrl !== selectedVariation.url);
+  }, [editedVariationUrl, selectedVariation]);
 
   return (
     <div className="space-y-10">
@@ -231,7 +341,7 @@ function ThumbnailStudioPage() {
         description="Compose click-worthy frames from layout presets, typography and generated imagery."
       />
 
-      <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="grid items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
         <Panel title="Input">
           <div className="space-y-5">
             <Field label="Topic / title">
@@ -251,12 +361,75 @@ function ThumbnailStudioPage() {
               <ChipGroup options={styles} value={style} onChange={setStyle} />
             </Field>
             <Field label="Reference image" hint="Optional — used as a visual anchor.">
-              <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-surface-2/60 px-4 py-8 text-center opacity-70">
-                <UploadCloud className="size-5 text-text-subtle" />
-                <p className="text-[12px] text-text-subtle">
-                  Drag an image or browse
-                </p>
-              </div>
+              <input
+                ref={referenceInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleReferenceFile(file);
+                  e.target.value = "";
+                }}
+              />
+              {referencePreview ? (
+                <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-2/60 p-2.5">
+                  <div className="relative size-14 shrink-0 overflow-hidden rounded-md bg-surface-3">
+                    <img src={referencePreview} alt="" className="size-full object-cover" />
+                    {referenceUploading ? (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                        <Loader2 className="size-4 animate-spin text-white" />
+                      </div>
+                    ) : null}
+                  </div>
+                  <p className="flex-1 text-[12px] text-text-muted">
+                    {referenceUploading ? "Uploading…" : "Reference image ready"}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    onClick={clearReferenceImage}
+                    aria-label="Remove reference image"
+                  >
+                    <X className="size-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => referenceInputRef.current?.click()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      referenceInputRef.current?.click();
+                    }
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setReferenceDragOver(true);
+                  }}
+                  onDragLeave={() => setReferenceDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setReferenceDragOver(false);
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) void handleReferenceFile(file);
+                  }}
+                  className={cn(
+                    "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-8 text-center transition-colors duration-150",
+                    referenceDragOver
+                      ? "border-accent-brand/60 bg-accent-tint"
+                      : "border-border bg-surface-2/60 hover:border-accent-brand/40",
+                  )}
+                >
+                  <UploadCloud className="size-5 text-text-subtle" />
+                  <p className="text-[12px] text-text-subtle">Drag an image or browse</p>
+                  <p className="text-[10px] text-text-subtle/70">JPEG, PNG or WebP, up to 8MB</p>
+                </div>
+              )}
             </Field>
             <Field label="Variations">
               <ChipGroup
@@ -392,9 +565,27 @@ function ThumbnailStudioPage() {
           </Panel>
 
           {selectedVariation ? (
-            <Panel title="Basic editor">
-              <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_260px]">
-                <div className="space-y-5">
+            <Panel title="Basic editor" bodyClassName="space-y-6">
+              <div className="max-w-xs space-y-2">
+                <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-subtle">
+                  Live preview
+                </p>
+                <ThumbnailFrame
+                  ratio={ratio}
+                  overlay={overlay}
+                  fontSize={fontSize}
+                  position={position}
+                  url={editedVariationUrl ?? selectedVariation.url}
+                  loading={editLoading}
+                  onLoad={() => setEditLoading(false)}
+                />
+              </div>
+
+              <div className="grid gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="space-y-4">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-subtle">
+                    Text &amp; layout
+                  </p>
                   <Field label="Text overlay">
                     <Input
                       value={overlay}
@@ -432,14 +623,6 @@ function ThumbnailStudioPage() {
                       ))}
                     </div>
                   </Field>
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label={`Image X — ${posX}%`}>
-                      <Slider value={[posX]} min={0} max={100} onValueChange={([v]) => setPosX(v ?? posX)} />
-                    </Field>
-                    <Field label={`Image Y — ${posY}%`}>
-                      <Slider value={[posY]} min={0} max={100} onValueChange={([v]) => setPosY(v ?? posY)} />
-                    </Field>
-                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Popover>
                       <PopoverTrigger asChild>
@@ -487,17 +670,38 @@ function ThumbnailStudioPage() {
                     </Button>
                   </div>
                 </div>
-                <div className="space-y-2">
+
+                <div className="space-y-4">
                   <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-subtle">
-                    Live preview
+                    Real edits — applied to preview &amp; export
                   </p>
-                  <ThumbnailFrame
-                    ratio={ratio}
-                    overlay={overlay}
-                    fontSize={fontSize}
-                    position={position}
-                    url={selectedVariation.url}
-                  />
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-5">
+                    <Field label={`Shadows — ${shadows}`} hint="Lifts shadow detail.">
+                      <Slider
+                        value={[shadows]}
+                        min={0}
+                        max={100}
+                        onValueChange={([v]) => setShadows(v ?? shadows)}
+                      />
+                    </Field>
+                    <Field label={`Highlights — ${highlights}`} hint="Negative recovers blown highlights.">
+                      <Slider
+                        value={[highlights]}
+                        min={-50}
+                        max={50}
+                        onValueChange={([v]) => setHighlights(v ?? highlights)}
+                      />
+                    </Field>
+                  </div>
+                  <div className="space-y-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[12px] text-text-muted">AI upscale</span>
+                      <Switch checked={upscale} onCheckedChange={setUpscale} />
+                    </div>
+                    <p className="text-[10px] text-text-subtle">
+                      4x resolution. First render can take a few seconds.
+                    </p>
+                  </div>
                 </div>
               </div>
             </Panel>
@@ -506,10 +710,6 @@ function ThumbnailStudioPage() {
           {selectedVariation ? (
             <Panel title="Output" bodyClassName="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm">Select final</Button>
-                <Button size="sm" variant="outline">
-                  Save to project
-                </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button size="sm" variant="outline">
@@ -519,18 +719,33 @@ function ThumbnailStudioPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent>
-                    <DropdownMenuItem>PNG 1280×720</DropdownMenuItem>
-                    <DropdownMenuItem>JPG</DropdownMenuItem>
-                    <DropdownMenuItem>All sizes</DropdownMenuItem>
+                    {["png", "jpg"].map((format) => (
+                      <DropdownMenuItem
+                        key={format}
+                        onClick={() => {
+                          const a = document.createElement("a");
+                          a.href = toExportUrl(editedVariationUrl ?? selectedVariation.url, format);
+                          a.click();
+                        }}
+                      >
+                        {format.toUpperCase()}
+                      </DropdownMenuItem>
+                    ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
               <SectionLabel>Next</SectionLabel>
               <ContextActions
                 actions={[
-                  { label: "Use in Video Studio", icon: Video },
-                  { label: "Attach to script", icon: FileText },
-                  { label: "Add to planner", icon: CalendarDays },
+                  {
+                    label: "Add to planner",
+                    icon: CalendarDays,
+                    onClick: () =>
+                      navigate({
+                        to: "/content-planner",
+                        search: { title: topic.trim() || "Untitled thumbnail", platform: id },
+                      }),
+                  },
                 ]}
               />
             </Panel>

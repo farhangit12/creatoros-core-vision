@@ -4,7 +4,8 @@ import { and, count, desc, eq, sum } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { auth } from "@/lib/auth";
-import { aiFeatureValues, aiGenerationStatusValues, aiGenerations } from "@/db/schema";
+import { aiFeatureValues, aiGenerationStatusValues, aiGenerations, aiAssets } from "@/db/schema";
+import { destroyImageFromCloudinary } from "@/lib/ai/providers/image/cloudinary-upload";
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
@@ -41,6 +42,38 @@ export const listGenerations = createServerFn({ method: "GET" })
       .orderBy(desc(aiGenerations.createdAt))
       .limit(data.limit ?? 50);
     return rows.map(toSerializableGeneration);
+  });
+
+const deleteGenerationSchema = z.object({
+  generationId: z.string().min(1),
+});
+
+export const deleteGeneration = createServerFn({ method: "POST" })
+  .validator((input: unknown) => deleteGenerationSchema.parse(input))
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+
+    const [generation] = await db
+      .select({ id: aiGenerations.id })
+      .from(aiGenerations)
+      .where(and(eq(aiGenerations.id, data.generationId), eq(aiGenerations.userId, userId)));
+    if (!generation) {
+      throw new Error("Generation not found.");
+    }
+
+    const assets = await db
+      .select({ url: aiAssets.url })
+      .from(aiAssets)
+      .where(and(eq(aiAssets.generationId, data.generationId), eq(aiAssets.userId, userId)));
+    await Promise.all(assets.map((a) => destroyImageFromCloudinary(a.url)));
+
+    // aiAssets rows cascade-delete with their parent generation (FK
+    // onDelete: "cascade") -- no separate delete needed for them.
+    await db
+      .delete(aiGenerations)
+      .where(and(eq(aiGenerations.id, data.generationId), eq(aiGenerations.userId, userId)));
+
+    return { success: true };
   });
 
 export const getUsageSummary = createServerFn({ method: "GET" }).handler(async () => {

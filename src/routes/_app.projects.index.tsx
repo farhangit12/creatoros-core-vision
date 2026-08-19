@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useMemo, useState, type CSSProperties } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -94,6 +94,32 @@ const coverColors = [
 
 const templates = ["Blank", "YouTube series", "Brand campaign", "Product launch", "Weekly shorts"];
 
+function coverPatternStyle(pattern: string | null | undefined): CSSProperties | undefined {
+  switch (pattern) {
+    case "Diagonal":
+      return {
+        backgroundImage:
+          "repeating-linear-gradient(45deg, currentColor 0, currentColor 1px, transparent 1px, transparent 10px)",
+        opacity: 0.25,
+      };
+    case "Grid":
+      return {
+        backgroundImage:
+          "linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)",
+        backgroundSize: "14px 14px",
+        opacity: 0.2,
+      };
+    case "Dotted":
+      return {
+        backgroundImage: "radial-gradient(currentColor 1px, transparent 1.5px)",
+        backgroundSize: "10px 10px",
+        opacity: 0.3,
+      };
+    default:
+      return undefined;
+  }
+}
+
 const PROJECTS_QUERY_KEY = ["projects"] as const;
 
 function lastModifiedLabel(date: Date) {
@@ -103,6 +129,7 @@ function lastModifiedLabel(date: Date) {
 type SortKey = "modified" | "name" | "status" | "progress";
 
 export function ProjectsPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const listProjectsFn = useServerFn(listProjects);
   const createProjectFn = useServerFn(createProject);
@@ -242,6 +269,8 @@ export function ProjectsPage() {
           .map((t) => t.trim())
           .filter(Boolean),
         cover,
+        coverPattern: newPattern,
+        template: newTemplate,
       },
     });
   }
@@ -295,6 +324,7 @@ export function ProjectsPage() {
                           type="button"
                           onClick={() => setNewCover(c.id)}
                           aria-pressed={newCover === c.id}
+                          aria-label={`Cover colour: ${c.id}`}
                           className={cn(
                             "size-8 rounded-lg border",
                             c.className,
@@ -399,6 +429,7 @@ export function ProjectsPage() {
             type="button"
             onClick={() => setView("grid")}
             aria-pressed={view === "grid"}
+            aria-label="Grid view"
             className={cn(
               "grid size-9 place-items-center text-text-muted",
               view === "grid" ? "bg-surface-2 text-foreground" : "hover:text-foreground",
@@ -410,6 +441,7 @@ export function ProjectsPage() {
             type="button"
             onClick={() => setView("list")}
             aria-pressed={view === "list"}
+            aria-label="List view"
             className={cn(
               "grid size-9 place-items-center border-l border-border text-text-muted",
               view === "list" ? "bg-surface-2 text-foreground" : "hover:text-foreground",
@@ -458,6 +490,7 @@ export function ProjectsPage() {
             <ProjectCard
               key={p.id}
               project={p}
+              onOpen={() => navigate({ to: "/projects/$projectId", params: { projectId: p.id } })}
               onToggleFavourite={() => toggleFavourite(p.id)}
               onDuplicate={() => duplicateProjectAction(p.id)}
               onArchive={() => archiveProject(p.id, p.archived)}
@@ -471,6 +504,7 @@ export function ProjectsPage() {
             <ProjectRow
               key={p.id}
               project={p}
+              onOpen={() => navigate({ to: "/projects/$projectId", params: { projectId: p.id } })}
               onToggleFavourite={() => toggleFavourite(p.id)}
               onDuplicate={() => duplicateProjectAction(p.id)}
               onArchive={() => archiveProject(p.id, p.archived)}
@@ -503,7 +537,8 @@ export function ProjectsPage() {
                 <ProjectRow
                   key={p.id}
                   project={p}
-                  onToggleFavourite={() => toggleFavourite(p.id)}
+                  onOpen={() => navigate({ to: "/projects/$projectId", params: { projectId: p.id } })}
+              onToggleFavourite={() => toggleFavourite(p.id)}
                   onDuplicate={() => duplicateProjectAction(p.id)}
                   onArchive={() => archiveProject(p.id, p.archived)}
                   onDelete={() => deleteProjectAction(p.id)}
@@ -518,6 +553,7 @@ export function ProjectsPage() {
 }
 
 function ProjectActionsMenu({
+  onOpen,
   onDuplicate,
   onFavourite,
   onArchive,
@@ -525,6 +561,7 @@ function ProjectActionsMenu({
   favourite,
   archived,
 }: {
+  onOpen: () => void;
   onDuplicate: () => void;
   onFavourite: () => void;
   onArchive: () => void;
@@ -538,6 +575,7 @@ function ProjectActionsMenu({
         <Button
           variant="ghost"
           size="icon"
+          aria-label="Project options"
           className="size-7 text-text-subtle hover:text-foreground"
           onClick={(e) => e.stopPropagation()}
         >
@@ -545,7 +583,7 @@ function ProjectActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-        <DropdownMenuItem>
+        <DropdownMenuItem onClick={onOpen}>
           <FolderOpen className="size-3.5" /> Open
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onDuplicate}>
@@ -568,12 +606,14 @@ function ProjectActionsMenu({
 
 function ProjectCard({
   project,
+  onOpen,
   onToggleFavourite,
   onDuplicate,
   onArchive,
   onDelete,
 }: {
   project: ProjectRecord;
+  onOpen: () => void;
   onToggleFavourite: () => void;
   onDuplicate: () => void;
   onArchive: () => void;
@@ -585,13 +625,18 @@ function ProjectCard({
       params={{ projectId: project.id }}
       className="group flex flex-col rounded-xl border border-border bg-surface transition-colors duration-150 hover:border-accent-brand/40"
     >
-      <div className={cn("relative h-24 rounded-t-xl", project.cover ?? "bg-surface-3")}>
+      <div className={cn("relative h-24 overflow-hidden rounded-t-xl", project.cover ?? "bg-surface-3")}>
+        {project.coverPattern ? (
+          <div aria-hidden className="absolute inset-0 text-foreground" style={coverPatternStyle(project.coverPattern)} />
+        ) : null}
         <button
           type="button"
           onClick={(e) => {
             e.preventDefault();
             onToggleFavourite();
           }}
+          aria-label={project.favourite ? `Unfavourite ${project.name}` : `Favourite ${project.name}`}
+          aria-pressed={project.favourite}
           className="absolute right-2 top-2 grid size-7 place-items-center rounded-md border border-border bg-surface/80 text-text-muted hover:text-warning"
         >
           <Star className={cn("size-3.5", project.favourite && "fill-warning text-warning")} />
@@ -602,6 +647,7 @@ function ProjectCard({
           <p className="text-[14px] font-medium leading-snug text-foreground">{project.name}</p>
           <div onClick={(e) => e.preventDefault()}>
             <ProjectActionsMenu
+              onOpen={onOpen}
               onDuplicate={onDuplicate}
               onFavourite={onToggleFavourite}
               onArchive={onArchive}
@@ -633,12 +679,14 @@ function ProjectCard({
 
 function ProjectRow({
   project,
+  onOpen,
   onToggleFavourite,
   onDuplicate,
   onArchive,
   onDelete,
 }: {
   project: ProjectRecord;
+  onOpen: () => void;
   onToggleFavourite: () => void;
   onDuplicate: () => void;
   onArchive: () => void;
@@ -670,12 +718,15 @@ function ProjectRow({
           e.preventDefault();
           onToggleFavourite();
         }}
+        aria-label={project.favourite ? `Unfavourite ${project.name}` : `Favourite ${project.name}`}
+        aria-pressed={project.favourite}
         className="grid size-7 shrink-0 place-items-center text-text-muted hover:text-warning"
       >
         <Star className={cn("size-3.5", project.favourite && "fill-warning text-warning")} />
       </button>
       <div onClick={(e) => e.preventDefault()}>
         <ProjectActionsMenu
+          onOpen={onOpen}
           onDuplicate={onDuplicate}
           onFavourite={onToggleFavourite}
           onArchive={onArchive}

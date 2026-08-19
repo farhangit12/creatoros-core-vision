@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { auth } from "@/lib/auth";
 import { user, userSettings } from "@/db/schema";
 import { tones } from "@/lib/creator-data";
+import { createUploadSignature, type UploadSignature } from "@/lib/server/files-storage";
 
 export type UserProfileRecord = typeof user.$inferSelect;
 export type UserSettingsRecord = typeof userSettings.$inferSelect;
@@ -74,6 +75,45 @@ export const updateUserProfile = createServerFn({ method: "POST" })
       .where(eq(user.id, userId))
       .returning();
     return assertRow(updated, "Failed to update profile.");
+  });
+
+const ALLOWED_AVATAR_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Signs a direct browser-to-Cloudinary upload for the current user's avatar
+ * folder, reusing the same signed-upload pattern already used for files,
+ * reference images and project files.
+ */
+export const getAvatarUploadSignature = createServerFn({ method: "POST" }).handler(
+  async (): Promise<UploadSignature> => {
+    const userId = await requireUserId();
+    return createUploadSignature(userId, `creatoros-avatars/${userId}`);
+  },
+);
+
+const updateAvatarSchema = z.object({
+  url: z.string().trim().url(),
+  mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+  size: z.number().int().positive(),
+});
+
+export const updateUserAvatar = createServerFn({ method: "POST" })
+  .validator((input: unknown) => updateAvatarSchema.parse(input))
+  .handler(async ({ data }) => {
+    if (!ALLOWED_AVATAR_MIME_TYPES.has(data.mimeType)) {
+      throw new Error("Unsupported image type.");
+    }
+    if (data.size > MAX_AVATAR_BYTES) {
+      throw new Error("Avatar image must be 5MB or smaller.");
+    }
+    const userId = await requireUserId();
+    const [updated] = await db
+      .update(user)
+      .set({ image: data.url, updatedAt: new Date() })
+      .where(eq(user.id, userId))
+      .returning();
+    return assertRow(updated, "Failed to update avatar.");
   });
 
 export const getUserSettings = createServerFn({ method: "GET" }).handler(async () => {

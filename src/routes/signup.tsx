@@ -184,16 +184,22 @@ function SignupPage() {
         <div className="flex items-start gap-2.5">
           <Checkbox
             id="terms"
+            aria-label="I agree to the Terms of Service and Privacy Policy."
             checked={agreed}
             onCheckedChange={(v) => setAgreed(v === true)}
             className="mt-0.5"
           />
-          <Label
-            htmlFor="terms"
-            className="text-[13px] leading-relaxed text-text-muted"
-          >
-            I agree to the Terms of Service and Privacy Policy.
-          </Label>
+          <p className="text-[13px] leading-relaxed text-text-muted">
+            I agree to the{" "}
+            <Link to="/terms" target="_blank" rel="noopener noreferrer" className="text-accent-brand hover:underline">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link to="/privacy" target="_blank" rel="noopener noreferrer" className="text-accent-brand hover:underline">
+              Privacy Policy
+            </Link>
+            .
+          </p>
         </div>
 
         <Button

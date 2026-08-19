@@ -5,7 +5,6 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
   FileText,
-  Save,
   Download,
   Sparkles,
   GripVertical,
@@ -15,13 +14,6 @@ import {
   Maximize2,
   Minimize2,
   Rows3,
-  Image as ImageIcon,
-  Clapperboard,
-  Repeat,
-  CalendarPlus,
-  History,
-  Eye,
-  RotateCcw,
 } from "lucide-react";
 import { EmptyState, PageHeader, SectionLabel } from "@/components/app/primitives";
 import {
@@ -33,7 +25,6 @@ import {
   Panel,
   PlatformGuidance,
   PlatformPicker,
-  StatusPill,
   usePlatform,
 } from "@/components/app/studio-kit";
 import { tones, languages } from "@/lib/creator-data";
@@ -61,13 +52,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 import { generateScriptAction, rewriteScriptAction } from "@/lib/server/ai/script-studio";
 import { getUserSettings } from "@/lib/server/settings";
 
@@ -86,16 +70,7 @@ export const Route = createFileRoute("/_app/script-studio")({
   component: ScriptStudioPage,
 });
 
-const mockProjects = ["Q3 Growth Series", "Onboarding Rewrite", "Founder Story Arc"];
-
 type Section = { id: string; label: string; text: string };
-
-const versions = [
-  { id: "v4", label: "v4", timestamp: "Today, 2:41 PM", author: "You", current: true },
-  { id: "v3", label: "v3", timestamp: "Today, 11:05 AM", author: "You", current: false },
-  { id: "v2", label: "v2", timestamp: "Yesterday, 6:20 PM", author: "Amara K.", current: false },
-  { id: "v1", label: "v1", timestamp: "Monday, 9:02 AM", author: "You", current: false },
-];
 
 const aiActions = [
   { key: "rewrite", label: "Rewrite", icon: RefreshCw, credits: 3 },
@@ -107,8 +82,7 @@ const aiActions = [
 
 function ScriptStudioPage() {
   const { id: platformId, setId: setPlatformId, platform } = usePlatform("youtube");
-  const [title, setTitle] = useState("Why your first 8 seconds are killing retention");
-  const [project, setProject] = useState<string>("none");
+  const [title, setTitle] = useState("");
 
   const [topic, setTopic] = useState("");
   const [contentType, setContentType] = useState<string>(platform.contentTypes[0] ?? "");
@@ -240,6 +214,30 @@ function ScriptStudioPage() {
     return { words, chars, minutes };
   }, [fullText]);
 
+  function downloadBlob(content: string, mime: string, extension: string) {
+    const blob = new Blob([content], { type: `${mime};charset=utf-8` });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(title || "untitled-script").replace(/[^a-z0-9-_]+/gi, "-")}.${extension}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportPlainText() {
+    if (sections.length === 0) return;
+    downloadBlob(`${title || "Untitled script"}\n\n${sections.map((s) => `${s.label}\n${s.text}`).join("\n\n")}`, "text/plain", "txt");
+  }
+
+  function exportMarkdown() {
+    if (sections.length === 0) return;
+    downloadBlob(
+      `# ${title || "Untitled script"}\n\n${sections.map((s) => `## ${s.label}\n\n${s.text}`).join("\n\n")}`,
+      "text/markdown",
+      "md",
+    );
+  }
+
   return (
     <div className="space-y-8">
       <PageHeader
@@ -248,35 +246,16 @@ function ScriptStudioPage() {
         description="Draft, structure and refine long-form scripts with an editor built for spoken words."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={project} onValueChange={(v) => setProject(v)}>
-              <SelectTrigger className="h-9 w-[180px] bg-surface-2 text-[13px]">
-                <SelectValue placeholder="No project" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No project</SelectItem>
-                {mockProjects.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {p}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button variant="outline" size="sm">
-              <Save className="size-3.5" />
-              Save
-            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" disabled={sections.length === 0}>
                   <Download className="size-3.5" />
                   Export
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem>PDF</DropdownMenuItem>
-                <DropdownMenuItem>Markdown</DropdownMenuItem>
-                <DropdownMenuItem>Plain text</DropdownMenuItem>
-                <DropdownMenuItem>Teleprompter</DropdownMenuItem>
+                <DropdownMenuItem onClick={exportMarkdown}>Markdown</DropdownMenuItem>
+                <DropdownMenuItem onClick={exportPlainText}>Plain text</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -290,7 +269,7 @@ function ScriptStudioPage() {
         placeholder="Untitled script"
       />
 
-      <div className="grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
+      <div className="grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
         {/* LEFT INPUT PANEL */}
         <div className="space-y-6">
           <Panel title="Script inputs">
@@ -429,59 +408,8 @@ function ScriptStudioPage() {
               </section>
 
               {selectedOption ? (
-                <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_240px]">
-                  <Panel
-                    title="Editor"
-                    bodyClassName="p-5"
-                    aside={
-                      <Sheet>
-                        <SheetTrigger asChild>
-                          <Button variant="outline" size="sm">
-                            <History className="size-3.5" />
-                            Versions
-                          </Button>
-                        </SheetTrigger>
-                        <SheetContent>
-                          <SheetHeader>
-                            <SheetTitle>Version history</SheetTitle>
-                          </SheetHeader>
-                          <div className="mt-4 space-y-3 px-1">
-                            {versions.map((v) => (
-                              <div
-                                key={v.id}
-                                className="rounded-lg border border-border bg-surface-2 p-3"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span className="font-mono text-[12px] text-foreground">{v.label}</span>
-                                  {v.current ? (
-                                    <StatusPill tone="accent">Current</StatusPill>
-                                  ) : null}
-                                </div>
-                                <p className="mt-1 text-[11px] text-text-subtle">
-                                  {v.timestamp} · {v.author}
-                                </p>
-                                <div className="mt-2 flex gap-1.5">
-                                  <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]">
-                                    <Eye className="size-3" />
-                                    Preview
-                                  </Button>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-7 px-2 text-[11px]"
-                                    disabled={v.current}
-                                  >
-                                    <RotateCcw className="size-3" />
-                                    Restore
-                                  </Button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </SheetContent>
-                      </Sheet>
-                    }
-                  >
+                <div className="grid items-start gap-6 2xl:grid-cols-[minmax(0,1fr)_220px]">
+                  <Panel title="Editor" bodyClassName="p-5">
                     <div className="space-y-4">
                       {sections.map((s) => (
                         <div
@@ -586,51 +514,10 @@ function ScriptStudioPage() {
                 </div>
               ) : null}
 
-              {selectedOption ? (
-                <Panel title="Next steps">
-                  <ContextActionsRow />
-                </Panel>
-              ) : null}
             </>
           ) : null}
         </div>
       </div>
-    </div>
-  );
-}
-
-function ContextActionsRow() {
-  const items = [
-    { label: "Save to Project", icon: Save },
-    { label: "Generate Thumbnail", icon: ImageIcon, to: "/thumbnail-studio" },
-    { label: "Generate Image", icon: ImageIcon, to: "/image-studio" },
-    { label: "Create Video", icon: Clapperboard, to: "/video-studio" },
-    { label: "Repurpose", icon: Repeat, to: "/repurpose" },
-    { label: "Add to Planner", icon: CalendarPlus, to: "/content-planner" },
-  ];
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {items.map((a) =>
-        a.to ? (
-          <a
-            key={a.label}
-            href={a.to}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface-2 px-2.5 text-[12px] text-text-muted transition-colors duration-150 hover:border-accent-brand/40 hover:text-foreground"
-          >
-            <a.icon className="size-3.5" />
-            {a.label}
-          </a>
-        ) : (
-          <button
-            key={a.label}
-            type="button"
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface-2 px-2.5 text-[12px] text-text-muted transition-colors duration-150 hover:border-accent-brand/40 hover:text-foreground"
-          >
-            <a.icon className="size-3.5" />
-            {a.label}
-          </button>
-        ),
-      )}
     </div>
   );
 }

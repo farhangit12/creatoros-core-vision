@@ -37,13 +37,14 @@ export interface UploadSignature {
 }
 
 /**
- * Signs a direct browser-to-Cloudinary upload for one user's files folder.
- * The browser never sees CLOUDINARY_API_SECRET -- only the resulting
- * signature, which is only valid for this exact timestamp+folder pair.
+ * Signs a direct browser-to-Cloudinary upload for one user's files folder
+ * (or a custom folder, e.g. avatars, when provided). The browser never sees
+ * CLOUDINARY_API_SECRET -- only the resulting signature, which is only valid
+ * for this exact timestamp+folder pair.
  */
-export function createUploadSignature(userId: string): UploadSignature {
+export function createUploadSignature(userId: string, folderOverride?: string): UploadSignature {
   const { cloudName, apiKey, apiSecret } = getConfig();
-  const folder = `creatoros-files/${userId}`;
+  const folder = folderOverride ?? `creatoros-files/${userId}`;
   const timestamp = String(Math.floor(Date.now() / 1000));
   const signature = signParams({ timestamp, folder }, apiSecret);
   return { cloudName, apiKey, timestamp, signature, folder };

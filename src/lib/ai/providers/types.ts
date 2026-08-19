@@ -55,12 +55,21 @@ export interface ImageProviderRequest {
   style?: string | undefined;
   sourceAssetId?: string;
   /**
-   * Publicly fetchable URL of the source asset for image.variation, resolved
-   * by the caller (image-studio.ts already loads the owned asset row to
-   * verify ownership) so providers never need their own DB access -- keeps
-   * the server-only boundary above scoped to API keys / SDK clients only.
+   * Publicly fetchable URL of a source/reference image, resolved by the
+   * caller so providers never need their own DB access (keeps the
+   * server-only boundary above scoped to API keys / SDK clients only).
+   * Required for image.variation (the asset being varied); optional for
+   * image.generate (a user-supplied reference image for img2img).
    */
   sourceAssetUrl?: string;
+  /**
+   * Exact text the user wants rendered legibly in the output (e.g. a
+   * thumbnail headline). Diffusion models render text unreliably, so
+   * providers should composite this as a real text overlay (e.g. a
+   * Cloudinary l_text transformation) instead of asking the model to draw
+   * the characters itself.
+   */
+  overlayText?: string;
   metadata?: Record<string, unknown>;
 }
 

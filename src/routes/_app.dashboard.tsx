@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { LinkProps } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { formatDistanceToNow } from "date-fns";
+import { useState } from "react";
+import { toast } from "sonner";
 import {
   ArrowUpRight,
   FileText,
@@ -12,6 +14,7 @@ import {
   MessagesSquare,
   Sparkles,
   FolderKanban,
+  Trash2,
   Upload,
   Wand2,
   PlayCircle,
@@ -22,8 +25,19 @@ import {
 } from "@/components/app/primitives";
 import { StatusPill, WireLine, type StateTone } from "@/components/app/studio-kit";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useSession } from "@/lib/auth-client";
-import { getDashboardSummary } from "@/lib/server/dashboard";
+import { getDashboardSummary, getRecentActivity } from "@/lib/server/dashboard";
+import { listGenerations, deleteGeneration } from "@/lib/server/ai/ai-usage";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({
@@ -92,14 +106,53 @@ const statusTone: Record<string, StateTone> = {
   Archived: "neutral",
 };
 
+const generationFeatureLabels: Record<string, string> = {
+  chat: "Chat & ideation",
+  "script-studio": "Script generation",
+  "image-studio": "Image generation",
+  "thumbnail-studio": "Thumbnail generation",
+};
+
+const generationStatusTone: Record<string, StateTone> = {
+  completed: "success",
+  pending: "warning",
+  failed: "danger",
+};
+
 function DashboardPage() {
   const { data: session } = useSession();
   const firstName = session?.user.name?.trim().split(/\s+/)[0];
+  const queryClient = useQueryClient();
 
   const getDashboardSummaryFn = useServerFn(getDashboardSummary);
   const { data: summary, isLoading } = useQuery({
     queryKey: ["dashboard-summary"],
     queryFn: () => getDashboardSummaryFn(),
+  });
+
+  const listGenerationsFn = useServerFn(listGenerations);
+  const { data: recentGenerations, isLoading: isLoadingGenerations } = useQuery({
+    queryKey: ["dashboard-recent-generations"],
+    queryFn: () => listGenerationsFn({ data: { limit: 5 } }),
+    refetchInterval: 15000,
+  });
+
+  const deleteGenerationFn = useServerFn(deleteGeneration);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
+  const deleteMutation = useMutation({
+    mutationFn: (vars: { generationId: string }) => deleteGenerationFn({ data: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dashboard-recent-generations"] });
+      setDeleteTarget(null);
+    },
+    onError: () => toast.error("Couldn't delete that generation. Try again."),
+  });
+
+  const getRecentActivityFn = useServerFn(getRecentActivity);
+  const { data: recentActivity, isLoading: isLoadingActivity } = useQuery({
+    queryKey: ["dashboard-recent-activity"],
+    queryFn: () => getRecentActivityFn(),
+    refetchInterval: 15000,
   });
 
   const stats = [
@@ -277,27 +330,95 @@ function DashboardPage() {
           >
             Recent AI generations
           </SectionLabel>
-          <EmptyState
-            icon={Sparkles}
-            title="No generations yet"
-            description="Scripts, images, thumbnails and chat replies you generate will be listed here with their credit cost."
-            action={
-              <Button asChild variant="outline" size="sm">
-                <Link to="/chat">Open AI chat</Link>
-              </Button>
-            }
-          />
+          {isLoadingGenerations ? (
+            <div className="space-y-2">
+              {Array.from({ length: 3 }, (_, i) => (
+                <WireLine key={i} className="h-14 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : recentGenerations && recentGenerations.length > 0 ? (
+            <div className="divide-y divide-border-subtle overflow-hidden rounded-xl border border-border">
+              {recentGenerations.map((g) => {
+                const label = generationFeatureLabels[g.feature] ?? g.feature;
+                return (
+                  <div
+                    key={g.id}
+                    className="group flex items-center justify-between gap-4 bg-surface px-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-[13px] font-medium text-foreground">{label}</p>
+                      <p className="font-mono text-[11px] text-text-subtle">
+                        {formatDistanceToNow(new Date(g.createdAt), { addSuffix: true })}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <StatusPill tone={generationStatusTone[g.status] ?? "neutral"}>{g.status}</StatusPill>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 text-text-subtle opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
+                        onClick={() => setDeleteTarget({ id: g.id, label })}
+                        aria-label={`Delete ${label} generation`}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyState
+              icon={Sparkles}
+              title="No generations yet"
+              description="Scripts, images, thumbnails and chat replies you generate will be listed here with their credit cost."
+              action={
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/chat">Open AI chat</Link>
+                </Button>
+              }
+            />
+          )}
         </div>
       </section>
 
       <section className="grid gap-10 lg:grid-cols-[1.1fr_1fr]">
         <div>
           <SectionLabel>Recent activity</SectionLabel>
-          <EmptyState
-            icon={History}
-            title="Nothing has happened yet"
-            description="Generations, edits and shares will appear here as a chronological trail of your work."
-          />
+          {isLoadingActivity ? (
+            <div className="space-y-2">
+              {Array.from({ length: 3 }, (_, i) => (
+                <WireLine key={i} className="h-14 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : recentActivity && recentActivity.length > 0 ? (
+            <div className="divide-y divide-border-subtle overflow-hidden rounded-xl border border-border">
+              {recentActivity.map((a) => (
+                <Link
+                  key={a.id}
+                  to="/projects/$projectId"
+                  params={{ projectId: a.projectId }}
+                  className="flex items-center justify-between gap-4 bg-surface px-4 py-3 transition-colors duration-150 hover:bg-surface-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-medium text-foreground">
+                      {a.action}
+                      {a.detail ? <span className="text-text-subtle"> — {a.detail}</span> : null}
+                    </p>
+                    <p className="font-mono text-[11px] text-text-subtle">
+                      {a.projectName} · {formatDistanceToNow(new Date(a.createdAt), { addSuffix: true })}
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={History}
+              title="Nothing has happened yet"
+              description="Generations, edits and shares will appear here as a chronological trail of your work."
+            />
+          )}
         </div>
 
         <div>
@@ -336,6 +457,26 @@ function DashboardPage() {
           ))}
         </div>
       </section>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this generation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              "{deleteTarget?.label}" and any generated assets will be permanently removed. This
+              can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTarget && deleteMutation.mutate({ generationId: deleteTarget.id })}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

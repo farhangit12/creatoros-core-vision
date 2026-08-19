@@ -9,6 +9,8 @@ import { aiConversations, aiGenerations, aiMessages } from "@/db/schema";
 import { chat } from "@/lib/ai/text-service";
 import { resolveOperation } from "@/lib/ai/registry";
 import type { ChatMessage, ChatRole, GenerationRecord } from "@/lib/ai/types";
+import { buildAttachmentContext } from "@/lib/server/ai/chat-attachments";
+import { createUploadSignature, type UploadSignature } from "@/lib/server/files-storage";
 
 export type ConversationRecord = typeof aiConversations.$inferSelect;
 export type MessageRecord = typeof aiMessages.$inferSelect;
@@ -102,11 +104,28 @@ const createConversationSchema = z.object({
 
 const conversationIdSchema = z.object({ conversationId: z.string().min(1) });
 
-const sendMessageSchema = z.object({
-  conversationId: z.string().min(1).optional(),
-  content: z.string().trim().min(1, "Message cannot be empty.").max(8000),
-  tone: z.string().trim().max(60).optional(),
+const renameConversationSchema = z.object({
+  conversationId: z.string().min(1),
+  title: z.string().trim().min(1, "Title cannot be empty.").max(200),
 });
+
+const attachmentSchema = z.object({
+  url: z.string().trim().url(),
+  name: z.string().trim().min(1).max(300),
+  mimeType: z.string().trim().min(1).max(120),
+});
+
+const sendMessageSchema = z
+  .object({
+    conversationId: z.string().min(1).optional(),
+    content: z.string().trim().max(8000),
+    tone: z.string().trim().max(60).optional(),
+    attachments: z.array(attachmentSchema).max(5).optional(),
+  })
+  .refine((v) => v.content.length > 0 || (v.attachments?.length ?? 0) > 0, {
+    message: "Message cannot be empty.",
+    path: ["content"],
+  });
 
 export const listConversations = createServerFn({ method: "GET" }).handler(async () => {
   const userId = await requireUserId();
@@ -129,6 +148,13 @@ export const getConversationMessages = createServerFn({ method: "GET" })
       .orderBy(aiMessages.createdAt);
     return rows.map(toSerializableMessage);
   });
+
+export const getChatAttachmentUploadSignature = createServerFn({ method: "POST" }).handler(
+  async (): Promise<UploadSignature> => {
+    const userId = await requireUserId();
+    return createUploadSignature(userId, `creatoros-chat-attachments/${userId}`);
+  },
+);
 
 export const createConversation = createServerFn({ method: "POST" })
   .validator((input: unknown) => createConversationSchema.parse(input))
@@ -167,13 +193,31 @@ export const sendChatMessage = createServerFn({ method: "POST" })
 
     const [userMessageRow] = await db
       .insert(aiMessages)
-      .values({ id: randomUUID(), conversationId: conversation.id, userId, role: "user", content: data.content })
+      .values({
+        id: randomUUID(),
+        conversationId: conversation.id,
+        userId,
+        role: "user",
+        content: data.content,
+        metadata: data.attachments?.length ? { attachments: data.attachments } : null,
+      })
       .returning();
     assertRow(userMessageRow, "Failed to store message.");
 
+    // The AI only ever sees attachment content for the turn it was attached
+    // to (via this augmented copy) -- the DB's own `content` column stays
+    // the clean, user-typed text so the chat thread doesn't show a wall of
+    // extracted document text back to the user.
+    const attachmentContext = data.attachments?.length
+      ? await buildAttachmentContext(data.attachments)
+      : "";
+    const augmentedContent = attachmentContext
+      ? `${attachmentContext}\n\n${data.content}`.trim()
+      : data.content;
+
     const history: ChatMessage[] = [
       ...priorMessages.map((m) => ({ role: m.role as ChatRole, content: m.content })),
-      { role: "user", content: data.content },
+      { role: "user", content: augmentedContent },
     ];
 
     try {
@@ -216,4 +260,43 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       });
       throw error;
     }
+  });
+
+export const renameConversation = createServerFn({ method: "POST" })
+  .validator((input: unknown) => renameConversationSchema.parse(input))
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    await loadOwnedConversation(userId, data.conversationId);
+    const [updated] = await db
+      .update(aiConversations)
+      .set({ title: data.title, updatedAt: new Date() })
+      .where(and(eq(aiConversations.id, data.conversationId), eq(aiConversations.userId, userId)))
+      .returning();
+    return assertRow(updated, "Failed to rename conversation.");
+  });
+
+export const deleteConversation = createServerFn({ method: "POST" })
+  .validator((input: unknown) => conversationIdSchema.parse(input))
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    await loadOwnedConversation(userId, data.conversationId);
+    await db
+      .delete(aiConversations)
+      .where(and(eq(aiConversations.id, data.conversationId), eq(aiConversations.userId, userId)));
+    return { success: true } as const;
+  });
+
+export const clearConversationMessages = createServerFn({ method: "POST" })
+  .validator((input: unknown) => conversationIdSchema.parse(input))
+  .handler(async ({ data }) => {
+    const userId = await requireUserId();
+    await loadOwnedConversation(userId, data.conversationId);
+    await db
+      .delete(aiMessages)
+      .where(and(eq(aiMessages.conversationId, data.conversationId), eq(aiMessages.userId, userId)));
+    await db
+      .update(aiConversations)
+      .set({ updatedAt: new Date() })
+      .where(eq(aiConversations.id, data.conversationId));
+    return { success: true } as const;
   });

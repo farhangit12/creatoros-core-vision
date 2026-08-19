@@ -72,3 +72,44 @@ export async function uploadImageToCloudinary(
 
   return { url: json.secure_url, width: json.width ?? 0, height: json.height ?? 0 };
 }
+
+// No public_id is captured at upload time (uploads only ever get folder +
+// signature, letting Cloudinary auto-assign one), so deletion derives it
+// back out of the stored secure_url instead of requiring a schema change.
+// Cloudinary secure_urls from this uploader always look like
+// https://res.cloudinary.com/<cloud>/image/upload/[<transformations>/]v<digits>/<folder>/<id>.<ext>
+// -- the public_id is the folder-qualified path with the extension stripped.
+// The optional transformation segment (e.g. a stored text-overlay URL) has
+// no slashes of its own, so it's skipped as a single path segment before
+// the version segment.
+function publicIdFromUrl(url: string): string | null {
+  const match = /\/upload\/(?:[^/]+\/)*v\d+\/(.+)\.[a-zA-Z0-9]+$/.exec(url);
+  return match?.[1] ?? null;
+}
+
+export async function destroyImageFromCloudinary(url: string): Promise<void> {
+  const publicId = publicIdFromUrl(url);
+  if (!publicId) return;
+
+  const { cloudName, apiKey, apiSecret } = getConfig();
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = signParams({ timestamp, public_id: publicId }, apiSecret);
+
+  const form = new FormData();
+  form.append("public_id", publicId);
+  form.append("api_key", apiKey);
+  form.append("timestamp", timestamp);
+  form.append("signature", signature);
+
+  // Best-effort: a failed destroy call here shouldn't block deleting the
+  // generation record itself -- same tradeoff already accepted for the
+  // Files system's own asset cleanup.
+  try {
+    await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/destroy`, {
+      method: "POST",
+      body: form,
+    });
+  } catch {
+    // ignore -- the DB row is still the source of truth for the user
+  }
+}

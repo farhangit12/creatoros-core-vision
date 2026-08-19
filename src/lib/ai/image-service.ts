@@ -25,6 +25,10 @@ export interface GenerateImagesParams {
   platform?: string;
   conversationId?: string;
   model?: string;
+  /** Publicly fetchable URL of a user-uploaded reference image, for img2img. */
+  referenceImageUrl?: string;
+  /** Exact text to render as a real overlay -- see providers/types.ts. */
+  overlayText?: string;
 }
 
 export interface GenerateImagesResult {
@@ -54,6 +58,8 @@ export async function generateImages(params: GenerateImagesParams): Promise<Gene
       aspectRatio: params.aspectRatio,
       style: params.style,
       metadata: { useCase: params.useCase, platform: params.platform },
+      ...(params.referenceImageUrl !== undefined ? { sourceAssetUrl: params.referenceImageUrl } : {}),
+      ...(params.overlayText !== undefined ? { overlayText: params.overlayText } : {}),
     });
     const assets = result.assets.map(toImageAsset);
     const completed = usageLogger.complete(generation.id, { output: assets });
@@ -77,6 +83,8 @@ export interface GenerateThumbnailsParams {
   platform?: string;
   conversationId?: string;
   model?: string;
+  /** Publicly fetchable URL of a user-uploaded reference image, for img2img. */
+  referenceImageUrl?: string;
 }
 
 export interface GenerateThumbnailsResult {
@@ -106,6 +114,7 @@ export async function generateThumbnails(params: GenerateThumbnailsParams): Prom
       aspectRatio: params.aspectRatio,
       style: params.style,
       metadata: { platform: params.platform },
+      ...(params.referenceImageUrl !== undefined ? { sourceAssetUrl: params.referenceImageUrl } : {}),
     });
     const variations: ThumbnailVariation[] = result.assets.map((asset, i) => ({
       id: randomUUID(),

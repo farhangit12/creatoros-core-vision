@@ -84,10 +84,32 @@ export const projects = pgTable("projects", {
   favourite: boolean("favourite").notNull().default(false),
   archived: boolean("archived").notNull().default(false),
   cover: text("cover"),
+  coverPattern: text("coverPattern"),
+  template: text("template"),
   visibility: text("visibility").notNull().default("private"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
+
+export const projectActivity = pgTable(
+  "project_activity",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("projectId")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    action: text("action").notNull(),
+    detail: text("detail"),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+  },
+  (table) => [
+    index("project_activity_projectId_idx").on(table.projectId),
+    index("project_activity_createdAt_idx").on(table.createdAt),
+  ],
+);
 
 export const plannerItems = pgTable("planner_items", {
   id: text("id").primaryKey(),
@@ -120,6 +142,7 @@ export const aiConversations = pgTable(
     userId: text("userId")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    projectId: text("projectId").references(() => projects.id, { onDelete: "set null" }),
     feature: text("feature").notNull(),
     title: text("title"),
     createdAt: timestamp("createdAt").notNull().defaultNow(),
@@ -128,6 +151,7 @@ export const aiConversations = pgTable(
   (table) => [
     index("ai_conversations_userId_idx").on(table.userId),
     index("ai_conversations_createdAt_idx").on(table.createdAt),
+    index("ai_conversations_projectId_idx").on(table.projectId),
   ],
 );
 
@@ -163,6 +187,7 @@ export const aiGenerations = pgTable(
     conversationId: text("conversationId").references(() => aiConversations.id, {
       onDelete: "set null",
     }),
+    projectId: text("projectId").references(() => projects.id, { onDelete: "set null" }),
     feature: text("feature").notNull(),
     operation: text("operation").notNull(),
     provider: text("provider").notNull(),
@@ -184,6 +209,7 @@ export const aiGenerations = pgTable(
     index("ai_generations_conversationId_idx").on(table.conversationId),
     index("ai_generations_status_idx").on(table.status),
     index("ai_generations_createdAt_idx").on(table.createdAt),
+    index("ai_generations_projectId_idx").on(table.projectId),
   ],
 );
 
@@ -197,6 +223,7 @@ export const aiAssets = pgTable(
     generationId: text("generationId")
       .notNull()
       .references(() => aiGenerations.id, { onDelete: "cascade" }),
+    projectId: text("projectId").references(() => projects.id, { onDelete: "set null" }),
     assetType: text("assetType").notNull(),
     url: text("url").notNull(),
     variantIndex: integer("variantIndex").notNull().default(0),
@@ -209,6 +236,7 @@ export const aiAssets = pgTable(
     index("ai_assets_userId_idx").on(table.userId),
     index("ai_assets_generationId_idx").on(table.generationId),
     index("ai_assets_createdAt_idx").on(table.createdAt),
+    index("ai_assets_projectId_idx").on(table.projectId),
   ],
 );
 
@@ -221,6 +249,7 @@ export const files = pgTable(
     userId: text("userId")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    projectId: text("projectId").references(() => projects.id, { onDelete: "set null" }),
     name: text("name").notNull(),
     mimeType: text("mimeType").notNull(),
     fileType: text("fileType").notNull(),
@@ -237,6 +266,7 @@ export const files = pgTable(
   (table) => [
     index("files_userId_idx").on(table.userId),
     index("files_createdAt_idx").on(table.createdAt),
+    index("files_projectId_idx").on(table.projectId),
   ],
 );
 

@@ -68,7 +68,33 @@ function buildPrompt(request: ImageProviderRequest): string {
   const parts = [request.prompt.trim(), request.style?.trim()].filter(
     (part): part is string => Boolean(part),
   );
-  return parts.length > 0 ? parts.join(", ") : "A high quality image for a content creator's video.";
+  const base =
+    parts.length > 0 ? parts.join(", ") : "A high quality image for a content creator's video.";
+
+  // No verified strength/guidance parameter exists for this model (only
+  // prompt/width/height/image are confirmed-working, per this file's own
+  // top-of-file eval notes) -- rather than guess at an unconfirmed field
+  // that could be silently ignored or rejected outright, reference fidelity
+  // is pushed through the one channel already proven to work: the prompt
+  // text itself, explicitly instructing the model to preserve the source.
+  if (request.sourceAssetUrl) {
+    return `Closely preserve the subject, composition, colors and style of the provided reference image. ${base}`;
+  }
+  return base;
+}
+
+// Renders exact user text as a real Cloudinary text overlay instead of
+// leaving it to the diffusion model, which -- like every current image
+// model -- renders in-image text unreliably (misspellings, garbled
+// characters). This is deterministic and correct by construction, not an
+// AI guess.
+function applyTextOverlay(url: string, text: string): string {
+  // encodeURIComponent already escapes the characters Cloudinary's URL
+  // transformation syntax treats specially (",", "/", "%"), so no further
+  // manual escaping is needed.
+  const encoded = encodeURIComponent(text);
+  const transformation = `l_text:Arial_64_bold:${encoded},co_white,g_south,y_48,w_0.86,c_fit,fl_relative,b_rgb:00000099`;
+  return url.replace("/upload/", `/upload/${transformation}/`);
 }
 
 interface SourceImage {
@@ -118,8 +144,16 @@ async function runFluxKlein(params: {
   };
 
   if (!response.ok || json.success === false) {
+    // A 401 here is Cloudflare rejecting our own server credentials, never
+    // something the requesting user did -- surface that distinction instead
+    // of passing through Cloudflare's generic "Authentication error" string,
+    // which reads like a user-auth problem and sends people down the wrong
+    // debugging path (this exact confusion cost real time -- see CLAUDE.md's
+    // Cloudflare Workers AI token note).
     const message =
-      json.errors?.[0]?.message ?? `Cloudflare Workers AI request failed with status ${response.status}.`;
+      response.status === 401
+        ? "Image generation is temporarily unavailable (a provider credentials issue on our side, not something you did). Try again shortly, or let support know if it persists."
+        : (json.errors?.[0]?.message ?? `Cloudflare Workers AI request failed with status ${response.status}.`);
     throw new ProviderHttpError(message, response.status);
   }
   if (!json.result?.image) {
@@ -139,8 +173,9 @@ async function generateOne(
   // Klein returns JPEG bytes regardless of the base64 field being named
   // "image" -- verified live via magic-byte inspection (ffd8ff... = JPEG).
   const uploaded = await uploadImageToCloudinary(imageBytes, "image/jpeg", CLOUDINARY_FOLDER);
+  const overlayText = request.overlayText?.trim();
   return {
-    url: uploaded.url,
+    url: overlayText ? applyTextOverlay(uploaded.url, overlayText) : uploaded.url,
     width: uploaded.width || dimensions.width,
     height: uploaded.height || dimensions.height,
     variantIndex,
@@ -157,11 +192,14 @@ export const cloudflareImageProvider: ImageProvider = {
     const prompt = buildPrompt(request);
     const dimensions = dimensionsForAspectRatio(request.aspectRatio);
 
+    // image.variation always requires a source; image.generate may optionally
+    // carry one too (a user-supplied reference image) -- both go through the
+    // same real img2img path, since the model itself doesn't distinguish them.
     let sourceImage: SourceImage | undefined;
-    if (request.operation === "image.variation") {
-      if (!request.sourceAssetUrl) {
-        throw new Error("Cloudflare image provider requires sourceAssetUrl for image.variation.");
-      }
+    if (request.operation === "image.variation" && !request.sourceAssetUrl) {
+      throw new Error("Cloudflare image provider requires sourceAssetUrl for image.variation.");
+    }
+    if (request.sourceAssetUrl) {
       sourceImage = await fetchSourceImage(request.sourceAssetUrl);
     }
 

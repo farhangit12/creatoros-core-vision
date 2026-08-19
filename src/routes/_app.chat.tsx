@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -12,26 +12,27 @@ import {
   Pencil,
   Trash2,
   MoreHorizontal,
-  Paperclip,
   Send,
   Square,
   Copy,
   RefreshCcw,
-  ThumbsUp,
-  ThumbsDown,
-  Save,
-  FileText,
-  Lightbulb,
-  Image as ImageIcon,
   Menu,
   X,
+  Download,
+  Eraser,
+  Paperclip,
+  FileText as FileIcon,
+  Image as ImageIcon,
+  Loader2,
 } from "lucide-react";
 import { EmptyState } from "@/components/app/primitives";
-import { ContextActions, CostHint, GeneratingState, StatusPill } from "@/components/app/studio-kit";
-import { models, tones } from "@/lib/creator-data";
+import { CostHint, GeneratingState } from "@/components/app/studio-kit";
+import { tones } from "@/lib/creator-data";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { MAX_FILE_SIZE_BYTES, classifyMimeType, formatFileSize } from "@/lib/files";
+import { uploadFileToCloudinary } from "@/lib/files-upload-client";
 import {
   Select,
   SelectContent,
@@ -65,8 +66,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import {
+  clearConversationMessages,
+  deleteConversation,
+  getChatAttachmentUploadSignature,
   getConversationMessages,
   listConversations,
+  renameConversation,
   sendChatMessage,
   type ConversationRecord,
   type MessageRecord,
@@ -91,7 +96,30 @@ type Group = "Pinned" | "Today" | "Earlier";
 
 type UIConversation = ConversationRecord & { group: Group };
 
-type DisplayMessage = { id: string; role: "user" | "assistant"; content: string };
+type MessageAttachment = { url: string; name: string; mimeType: string };
+type DisplayMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  attachments?: MessageAttachment[];
+};
+
+type PendingAttachment = MessageAttachment & { localId: string; uploading: boolean };
+
+// Documents/images only -- video/audio aren't parsed into AI context (no
+// transcription pipeline), so offering them here would just be a dead
+// control that looks functional but never actually reaches the model.
+const CHAT_ATTACHMENT_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "text/plain",
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
+const MAX_ATTACHMENTS_PER_MESSAGE = 5;
 
 const suggestedPrompts = [
   "Draft 5 hooks for my next video",
@@ -121,6 +149,33 @@ function isSameDay(a: Date, b: Date): boolean {
   return a.toDateString() === b.toDateString();
 }
 
+// Pin state has no DB column (it's a personal client-side preference, not
+// shared product data), so it's persisted in localStorage instead of only
+// in-memory -- otherwise a reload silently loses it, which reads as broken
+// rather than as a real, intentionally-local preference. The active
+// conversation is deliberately NOT persisted: opening Chat should always
+// start a fresh New Chat, like ChatGPT, rather than reopening whatever was
+// last open.
+const PINNED_STORAGE_KEY = "creatoros-chat-pinned";
+
+function loadPinnedIds(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(PINNED_STORAGE_KEY);
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function savePinnedIds(ids: Set<string>) {
+  try {
+    window.localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify([...ids]));
+  } catch {
+    // best-effort only -- a full/blocked localStorage shouldn't break chat
+  }
+}
+
 export default function ChatPage() {
   return <ChatPageImpl />;
 }
@@ -130,17 +185,23 @@ function ChatPageImpl() {
   const listConversationsFn = useServerFn(listConversations);
   const getMessagesFn = useServerFn(getConversationMessages);
   const sendMessageFn = useServerFn(sendChatMessage);
+  const renameConversationFn = useServerFn(renameConversation);
+  const deleteConversationFn = useServerFn(deleteConversation);
+  const clearMessagesFn = useServerFn(clearConversationMessages);
   const getUserSettingsFn = useServerFn(getUserSettings);
+  const getAttachmentSignatureFn = useServerFn(getChatAttachmentUploadSignature);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [mobileRailOpen, setMobileRailOpen] = useState(false);
-  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(() => loadPinnedIds());
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
 
   const [draft, setDraft] = useState("");
   const [pendingMessages, setPendingMessages] = useState<DisplayMessage[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [visuallyStopped, setVisuallyStopped] = useState(false);
-  const [modelId, setModelId] = useState<string>(models[0]!.id);
   const [toneValue, setToneValue] = useState<string>(tones[0]!);
 
   const { data: settings } = useQuery({
@@ -166,7 +227,18 @@ function ChatPageImpl() {
     queryKey: activeId ? chatMessagesKey(activeId) : ["ai-chat-messages", "none"],
     queryFn: () => getMessagesFn({ data: { conversationId: activeId! } }),
     enabled: !!activeId,
+    retry: false,
   });
+
+  // The last-active conversation is restored from localStorage on load; if it
+  // was deleted (this session or another) or never resolves, fall back to the
+  // empty state instead of getting stuck on a permanent error/blank panel.
+  useEffect(() => {
+    if (messagesQuery.isError && activeId) {
+      setActiveId(null);
+      setPendingMessages([]);
+    }
+  }, [messagesQuery.isError, activeId]);
 
   const uiConversations: UIConversation[] = useMemo(
     () =>
@@ -193,16 +265,24 @@ function ChatPageImpl() {
 
   const groups: Group[] = ["Pinned", "Today", "Earlier"];
 
-  const persistedMessages: DisplayMessage[] = (messagesQuery.data ?? []).map((m: MessageRecord) => ({
-    id: m.id,
-    role: m.role as "user" | "assistant",
-    content: m.content,
-  }));
+  const persistedMessages: DisplayMessage[] = (messagesQuery.data ?? []).map((m: MessageRecord) => {
+    const metadata = m.metadata as { attachments?: MessageAttachment[] } | null;
+    return {
+      id: m.id,
+      role: m.role as "user" | "assistant",
+      content: m.content,
+      ...(metadata?.attachments?.length ? { attachments: metadata.attachments } : {}),
+    };
+  });
   const messages: DisplayMessage[] = [...persistedMessages, ...pendingMessages];
 
   const sendMutation = useMutation({
-    mutationFn: (vars: { content: string; conversationId?: string; tone?: string }) =>
-      sendMessageFn({ data: vars }),
+    mutationFn: (vars: {
+      content: string;
+      conversationId?: string;
+      tone?: string;
+      attachments?: MessageAttachment[];
+    }) => sendMessageFn({ data: vars }),
     onSuccess: async (result) => {
       const wasNew = !activeId;
       await queryClient.fetchQuery({
@@ -228,37 +308,84 @@ function ChatPageImpl() {
       const next = new Set(prev);
       if (next.has(c.id)) next.delete(c.id);
       else next.add(c.id);
+      savePinnedIds(next);
       return next;
     });
   }
 
+  const renameMutation = useMutation({
+    mutationFn: (vars: { conversationId: string; title: string }) => renameConversationFn({ data: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CHAT_CONVERSATIONS_KEY });
+      setRenameTarget(null);
+    },
+    onError: () => toast.error("Couldn't rename that chat. Try again."),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (vars: { conversationId: string }) => deleteConversationFn({ data: vars }),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: CHAT_CONVERSATIONS_KEY });
+      if (activeId === vars.conversationId) setActiveId(null);
+      setDeleteTarget(null);
+    },
+    onError: () => toast.error("Couldn't delete that chat. Try again."),
+  });
+
+  const clearMutation = useMutation({
+    mutationFn: (vars: { conversationId: string }) => clearMessagesFn({ data: vars }),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: chatMessagesKey(vars.conversationId) });
+      setClearConfirmOpen(false);
+    },
+    onError: () => toast.error("Couldn't clear messages. Try again."),
+  });
+
+  function exportConversation() {
+    if (!active || messages.length === 0) return;
+    const lines = messages.map((m) => `${m.role === "user" ? "You" : "CreatorOS"}: ${m.content}`);
+    const blob = new Blob([lines.join("\n\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(active.title ?? "chat").replace(/[^a-z0-9-_]+/gi, "-")}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function confirmRename() {
-    if (!renameTarget) return;
-    queryClient.setQueryData(CHAT_CONVERSATIONS_KEY, (old: ConversationRecord[] | undefined) =>
-      (old ?? []).map((x) => (x.id === renameTarget.id ? { ...x, title: renameValue || x.title } : x)),
-    );
-    setRenameTarget(null);
+    if (!renameTarget || !renameValue.trim()) return;
+    renameMutation.mutate({ conversationId: renameTarget.id, title: renameValue.trim() });
   }
 
   function confirmDelete() {
     if (!deleteTarget) return;
-    queryClient.setQueryData(CHAT_CONVERSATIONS_KEY, (old: ConversationRecord[] | undefined) =>
-      (old ?? []).filter((x) => x.id !== deleteTarget.id),
-    );
-    if (activeId === deleteTarget.id) setActiveId(null);
-    setDeleteTarget(null);
+    deleteMutation.mutate({ conversationId: deleteTarget.id });
   }
 
   function handleSend() {
-    if (!draft.trim() || sendMutation.isPending) return;
     const content = draft.trim();
-    setPendingMessages([{ id: `local-${Date.now()}`, role: "user", content }]);
+    const readyAttachments = pendingAttachments.filter((a) => !a.uploading);
+    const hasAttachments = readyAttachments.length > 0;
+    const stillUploading = pendingAttachments.length > readyAttachments.length;
+    if ((!content && !hasAttachments) || stillUploading || sendMutation.isPending) return;
+
+    const attachments: MessageAttachment[] = readyAttachments.map(({ url, name, mimeType }) => ({
+      url,
+      name,
+      mimeType,
+    }));
+    setPendingMessages([
+      { id: `local-${Date.now()}`, role: "user", content, ...(hasAttachments ? { attachments } : {}) },
+    ]);
     setVisuallyStopped(false);
     setDraft("");
+    setPendingAttachments([]);
     sendMutation.mutate({
       content,
       ...(activeId ? { conversationId: activeId } : {}),
       ...(toneValue ? { tone: toneValue } : {}),
+      ...(hasAttachments ? { attachments } : {}),
     });
   }
 
@@ -269,11 +396,51 @@ function ChatPageImpl() {
   function startNewChat() {
     setActiveId(null);
     setPendingMessages([]);
+    setPendingAttachments([]);
     setVisuallyStopped(false);
     setDraft("");
   }
 
-  const activeModel = models.find((m) => m.id === modelId) ?? models[0]!;
+  async function handleFilesSelected(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList);
+    if (pendingAttachments.length + files.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+      toast.error(`You can attach up to ${MAX_ATTACHMENTS_PER_MESSAGE} files per message.`);
+      return;
+    }
+
+    for (const file of files) {
+      if (!CHAT_ATTACHMENT_MIME_TYPES.includes(file.type)) {
+        toast.error(`${file.name}: unsupported file type.`);
+        continue;
+      }
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        toast.error(`${file.name}: file is too large (max ${formatFileSize(MAX_FILE_SIZE_BYTES)}).`);
+        continue;
+      }
+
+      const localId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      setPendingAttachments((prev) => [
+        ...prev,
+        { localId, url: "", name: file.name, mimeType: file.type, uploading: true },
+      ]);
+
+      try {
+        const signature = await getAttachmentSignatureFn();
+        const result = await uploadFileToCloudinary(file, signature, () => {});
+        setPendingAttachments((prev) =>
+          prev.map((a) => (a.localId === localId ? { ...a, url: result.url, uploading: false } : a)),
+        );
+      } catch {
+        toast.error(`Couldn't upload ${file.name}.`);
+        setPendingAttachments((prev) => prev.filter((a) => a.localId !== localId));
+      }
+    }
+  }
+
+  function removeAttachment(localId: string) {
+    setPendingAttachments((prev) => prev.filter((a) => a.localId !== localId));
+  }
 
   return (
     <div className="flex h-[calc(100vh-7rem)] min-h-[600px] gap-4">
@@ -294,6 +461,7 @@ function ChatPageImpl() {
             size="icon"
             className="lg:hidden"
             onClick={() => setMobileRailOpen(false)}
+            aria-label="Close chat list"
           >
             <X className="size-4" />
           </Button>
@@ -355,6 +523,7 @@ function ChatPageImpl() {
                             variant="ghost"
                             size="icon"
                             className="size-6 shrink-0 opacity-0 group-hover:opacity-100"
+                            aria-label={`More options for ${c.title ?? "New chat"}`}
                           >
                             <MoreHorizontal className="size-3.5" />
                           </Button>
@@ -411,6 +580,7 @@ function ChatPageImpl() {
               size="icon"
               className="lg:hidden"
               onClick={() => setMobileRailOpen(true)}
+              aria-label="Open chat list"
             >
               <Menu className="size-4" />
             </Button>
@@ -418,25 +588,29 @@ function ChatPageImpl() {
               <p className="truncate text-[14px] font-medium text-foreground">
                 {active?.title ?? "New chat"}
               </p>
-              <div className="mt-1 flex items-center gap-2">
-                <StatusPill tone="accent">{activeModel.label}</StatusPill>
-                <span className="font-mono text-[10px] text-text-subtle">
-                  32 credits used in this chat
-                </span>
-              </div>
             </div>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon">
+              <Button variant="outline" size="icon" disabled={!active} aria-label="Chat options">
                 <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem>Export conversation</DropdownMenuItem>
-              <DropdownMenuItem>Clear messages</DropdownMenuItem>
-              <DropdownMenuItem className="text-danger focus:text-danger">
-                Delete chat
+              <DropdownMenuItem onClick={exportConversation} disabled={messages.length === 0}>
+                <Download className="mr-2 size-3.5" /> Export conversation
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setClearConfirmOpen(true)}
+                disabled={messages.length === 0}
+              >
+                <Eraser className="mr-2 size-3.5" /> Clear messages
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-danger focus:text-danger"
+                onClick={() => active && setDeleteTarget(active)}
+              >
+                <Trash2 className="mr-2 size-3.5" /> Delete chat
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -451,17 +625,43 @@ function ChatPageImpl() {
             />
           ) : (
             messages.map((m, i) => {
-              const isLast = i === messages.length - 1;
+              const precedingUserMessage = m.role === "assistant" ? messages[i - 1] : undefined;
               return (
                 <div key={m.id} className="group">
                   {m.role === "user" ? (
                     <div className="flex justify-end">
                       <div className="relative max-w-[75%]">
-                        <div className="rounded-xl bg-accent-brand px-4 py-2.5 text-[13px] leading-relaxed text-primary-foreground">
-                          {m.content}
-                        </div>
+                        {m.attachments?.length ? (
+                          <div className="mb-1.5 flex flex-wrap justify-end gap-1.5">
+                            {m.attachments.map((a) => (
+                              <a
+                                key={a.url}
+                                href={a.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-2 px-2 py-1 text-[11px] text-text-muted transition-colors hover:border-accent-brand/40 hover:text-foreground"
+                              >
+                                {a.mimeType.startsWith("image/") ? (
+                                  <ImageIcon className="size-3" />
+                                ) : (
+                                  <FileIcon className="size-3" />
+                                )}
+                                <span className="max-w-[140px] truncate">{a.name}</span>
+                              </a>
+                            ))}
+                          </div>
+                        ) : null}
+                        {m.content ? (
+                          <div className="rounded-xl bg-accent-brand px-4 py-2.5 text-[13px] leading-relaxed text-primary-foreground">
+                            {m.content}
+                          </div>
+                        ) : null}
                         <div className="mt-1 flex justify-end opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                          <button className="inline-flex items-center gap-1 text-[11px] text-text-subtle hover:text-foreground">
+                          <button
+                            type="button"
+                            onClick={() => setDraft(m.content)}
+                            className="inline-flex items-center gap-1 text-[11px] text-text-subtle hover:text-foreground"
+                          >
                             <Pencil className="size-3" /> Edit prompt
                           </button>
                         </div>
@@ -473,30 +673,38 @@ function ChatPageImpl() {
                         {m.content}
                       </p>
                       <div className="mt-1.5 flex items-center gap-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                        <button className="inline-flex items-center gap-1 text-[11px] text-text-subtle hover:text-foreground">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(m.content).then(
+                              () => toast.success("Copied to clipboard"),
+                              () => toast.error("Couldn't copy — check clipboard permissions."),
+                            );
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] text-text-subtle hover:text-foreground"
+                        >
                           <Copy className="size-3" /> Copy
                         </button>
-                        <button className="inline-flex items-center gap-1 text-[11px] text-text-subtle hover:text-foreground">
-                          <RefreshCcw className="size-3" /> Regenerate
-                        </button>
-                        <button className="inline-flex items-center gap-1 text-[11px] text-text-subtle hover:text-foreground">
-                          <ThumbsUp className="size-3" /> Like
-                        </button>
-                        <button className="inline-flex items-center gap-1 text-[11px] text-text-subtle hover:text-foreground">
-                          <ThumbsDown className="size-3" /> Dislike
-                        </button>
+                        {precedingUserMessage ? (
+                          <button
+                            type="button"
+                            disabled={sendMutation.isPending}
+                            onClick={() => {
+                              setPendingMessages([
+                                { id: `local-${Date.now()}`, role: "user", content: precedingUserMessage.content },
+                              ]);
+                              sendMutation.mutate({
+                                content: precedingUserMessage.content,
+                                ...(activeId ? { conversationId: activeId } : {}),
+                                ...(toneValue ? { tone: toneValue } : {}),
+                              });
+                            }}
+                            className="inline-flex items-center gap-1 text-[11px] text-text-subtle hover:text-foreground disabled:opacity-50"
+                          >
+                            <RefreshCcw className="size-3" /> Regenerate
+                          </button>
+                        ) : null}
                       </div>
-                      {isLast ? (
-                        <ContextActions
-                          className="mt-3"
-                          actions={[
-                            { label: "Save to Project", icon: Save },
-                            { label: "Convert to Script", icon: FileText },
-                            { label: "Convert to Content Idea", icon: Lightbulb },
-                            { label: "Create Thumbnail", icon: ImageIcon },
-                          ]}
-                        />
-                      ) : null}
                     </div>
                   )}
                 </div>
@@ -531,6 +739,33 @@ function ChatPageImpl() {
 
         <div className="border-t border-border-subtle p-4">
           <div className="rounded-xl border border-border bg-surface-2 p-3">
+            {pendingAttachments.length > 0 ? (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {pendingAttachments.map((a) => (
+                  <span
+                    key={a.localId}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2 py-1 text-[11px] text-text-muted"
+                  >
+                    {a.uploading ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : a.mimeType.startsWith("image/") ? (
+                      <ImageIcon className="size-3" />
+                    ) : (
+                      <FileIcon className="size-3" />
+                    )}
+                    <span className="max-w-[140px] truncate">{a.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeAttachment(a.localId)}
+                      className="text-text-subtle hover:text-danger"
+                      aria-label={`Remove ${a.name}`}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
             <Textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -544,22 +779,27 @@ function ChatPageImpl() {
                 }
               }}
             />
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={CHAT_ATTACHMENT_MIME_TYPES.join(",")}
+              className="hidden"
+              onChange={(e) => {
+                handleFilesSelected(e.target.files);
+                e.target.value = "";
+              }}
+            />
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="icon" className="size-8">
-                <Paperclip className="size-3.5" />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 text-text-subtle hover:text-foreground"
+                onClick={() => fileInputRef.current?.click()}
+                aria-label="Attach files"
+              >
+                <Paperclip className="size-4" />
               </Button>
-              <Select value={modelId} onValueChange={setModelId}>
-                <SelectTrigger className="h-8 w-[170px] text-[12px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {models.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
               <Select value={toneValue} onValueChange={setToneValue}>
                 <SelectTrigger className="h-8 w-[140px] text-[12px]">
                   <SelectValue />
@@ -579,7 +819,15 @@ function ChatPageImpl() {
                     <Square className="size-3.5" /> Stop
                   </Button>
                 ) : (
-                  <Button size="sm" onClick={handleSend} disabled={!draft.trim()} className="gap-1.5">
+                  <Button
+                    size="sm"
+                    onClick={handleSend}
+                    disabled={
+                      (!draft.trim() && pendingAttachments.length === 0) ||
+                      pendingAttachments.some((a) => a.uploading)
+                    }
+                    className="gap-1.5"
+                  >
                     <Send className="size-3.5" /> Send
                   </Button>
                 )}
@@ -618,6 +866,27 @@ function ChatPageImpl() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Clear messages alert */}
+      <AlertDialog open={clearConfirmOpen} onOpenChange={setClearConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear all messages?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Every message in "{active?.title ?? "New chat"}" will be permanently removed. This can't be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => activeId && clearMutation.mutate({ conversationId: activeId })}
+            >
+              Clear
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -47,3 +47,14 @@ export function formatFileSize(bytes: number): string {
 export function toDownloadUrl(url: string): string {
   return url.replace("/upload/", "/upload/fl_attachment/");
 }
+
+/**
+ * Forces a square, face-centered crop regardless of the source photo's
+ * orientation -- a portrait or landscape upload otherwise renders inside a
+ * square avatar slot uncropped/sideways depending on its own aspect ratio
+ * and EXIF rotation. Any Cloudinary transformation also normalizes EXIF
+ * orientation as a side effect, which fixes sideways phone photos too.
+ */
+export function toAvatarUrl(url: string, size = 128): string {
+  return url.replace("/upload/", `/upload/c_fill,g_face,w_${size},h_${size},f_auto,q_auto/`);
+}

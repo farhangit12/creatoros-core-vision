@@ -5,7 +5,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { auth } from "@/lib/auth";
-import { projectStatusValues, projects } from "@/db/schema";
+import { projectActivity, projectStatusValues, projects } from "@/db/schema";
 
 export type ProjectRecord = typeof projects.$inferSelect;
 
@@ -37,11 +37,28 @@ async function loadOwnedProject(userId: string, projectId: string): Promise<Proj
   return project;
 }
 
+async function recordActivity(params: {
+  projectId: string;
+  userId: string;
+  action: string;
+  detail?: string | null;
+}): Promise<void> {
+  await db.insert(projectActivity).values({
+    id: randomUUID(),
+    projectId: params.projectId,
+    userId: params.userId,
+    action: params.action,
+    detail: params.detail ?? null,
+  });
+}
+
 const createProjectSchema = z.object({
   name: z.string().trim().min(1, "Name is required.").max(200),
   description: z.string().trim().max(2000).optional(),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
   cover: z.string().trim().max(200).optional(),
+  coverPattern: z.string().trim().max(60).optional(),
+  template: z.string().trim().max(80).optional(),
   visibility: z.enum(visibilityValues).optional(),
 });
 
@@ -54,6 +71,8 @@ const updateProjectSchema = z.object({
   tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
   favourite: z.boolean().optional(),
   cover: z.string().trim().max(200).optional(),
+  coverPattern: z.string().trim().max(60).optional(),
+  template: z.string().trim().max(80).optional(),
   visibility: z.enum(visibilityValues).optional(),
 });
 
@@ -89,10 +108,14 @@ export const createProject = createServerFn({ method: "POST" })
         description: data.description ?? null,
         tags: data.tags ?? [],
         cover: data.cover ?? null,
+        coverPattern: data.coverPattern ?? null,
+        template: data.template ?? null,
         visibility: data.visibility ?? "private",
       })
       .returning();
-    return assertRow(created, "Failed to create project.");
+    const project = assertRow(created, "Failed to create project.");
+    await recordActivity({ projectId: project.id, userId, action: "Project created" });
+    return project;
   });
 
 export const updateProject = createServerFn({ method: "POST" })
@@ -106,7 +129,9 @@ export const updateProject = createServerFn({ method: "POST" })
       .set({ ...fields, updatedAt: new Date() })
       .where(and(eq(projects.id, id), eq(projects.userId, userId)))
       .returning();
-    return assertRow(updated, "Failed to update project.");
+    const project = assertRow(updated, "Failed to update project.");
+    await recordActivity({ projectId: id, userId, action: "Settings saved" });
+    return project;
   });
 
 export const toggleProjectFavourite = createServerFn({ method: "POST" })
@@ -136,7 +161,13 @@ export const setProjectArchived = createServerFn({ method: "POST" })
       })
       .where(and(eq(projects.id, data.id), eq(projects.userId, userId)))
       .returning();
-    return assertRow(updated, "Failed to update project.");
+    const project = assertRow(updated, "Failed to update project.");
+    await recordActivity({
+      projectId: data.id,
+      userId,
+      action: data.archived ? "Project archived" : "Project unarchived",
+    });
+    return project;
   });
 
 export const duplicateProject = createServerFn({ method: "POST" })
@@ -157,10 +188,14 @@ export const duplicateProject = createServerFn({ method: "POST" })
         favourite: source.favourite,
         archived: source.archived,
         cover: source.cover,
+        coverPattern: source.coverPattern,
+        template: source.template,
         visibility: source.visibility,
       })
       .returning();
-    return assertRow(created, "Failed to duplicate project.");
+    const project = assertRow(created, "Failed to duplicate project.");
+    await recordActivity({ projectId: project.id, userId, action: "Project duplicated", detail: `from ${source.name}` });
+    return project;
   });
 
 export const deleteProject = createServerFn({ method: "POST" })

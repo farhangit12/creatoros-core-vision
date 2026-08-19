@@ -2,6 +2,7 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Bell, Menu, Search } from "lucide-react";
 import { findNavItem } from "@/lib/navigation";
 import { authClient, useSession } from "@/lib/auth-client";
+import { toAvatarUrl } from "@/lib/files";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -111,6 +112,7 @@ export function Topbar({
           <div className="border-t border-border-subtle px-4 py-2.5 text-center">
             <Link
               to="/settings"
+              search={{ section: "Notifications" }}
               className="text-[12px] text-text-subtle transition-colors hover:text-foreground"
             >
               Notification preferences →
@@ -122,9 +124,15 @@ export function Topbar({
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label="Account menu"
-          className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-3 font-mono text-[11px] text-foreground transition-colors hover:bg-surface-2"
+          className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-lg bg-surface-3 font-mono text-[11px] text-foreground transition-colors hover:bg-surface-2"
         >
-          {user ? initialsFor(user.name) : "…"}
+          {user?.image ? (
+            <img src={toAvatarUrl(user.image, 64)} alt="" className="size-full object-cover" />
+          ) : user ? (
+            initialsFor(user.name)
+          ) : (
+            "…"
+          )}
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56 shadow-popover">
           <DropdownMenuLabel className="font-normal">

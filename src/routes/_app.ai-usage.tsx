@@ -129,36 +129,38 @@ function AiUsagePage() {
             Generation history
           </SectionLabel>
           <div className="overflow-hidden rounded-xl border border-border bg-surface">
-            <table className="w-full text-left text-[13px]">
-              <thead>
-                <tr className="border-b border-border-subtle text-text-subtle">
-                  <th className="px-5 py-3 font-normal">Feature</th>
-                  <th className="px-5 py-3 font-normal">Model</th>
-                  <th className="px-5 py-3 font-normal">Tokens</th>
-                  <th className="px-5 py-3 font-normal">Timestamp</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-subtle">
-                {generations.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-5 py-6 text-center text-[12px] text-text-subtle">
-                      No generations yet — try Chat, Script Studio, Image Studio or Thumbnail Studio.
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[13px]">
+                <thead>
+                  <tr className="border-b border-border-subtle text-text-subtle">
+                    <th className="px-5 py-3 font-normal">Feature</th>
+                    <th className="px-5 py-3 font-normal">Model</th>
+                    <th className="px-5 py-3 font-normal">Tokens</th>
+                    <th className="px-5 py-3 font-normal">Timestamp</th>
                   </tr>
-                ) : (
-                  generations.map((g) => (
-                    <tr key={g.id}>
-                      <td className="px-5 py-3 text-foreground">{featureLabels[g.feature] ?? g.feature}</td>
-                      <td className="px-5 py-3 text-text-muted">{g.model}</td>
-                      <td className="px-5 py-3 font-mono text-foreground">{g.totalTokens ?? 0}</td>
-                      <td className="px-5 py-3 font-mono text-[11px] text-text-subtle">
-                        {formatGenerationTimestamp(g.createdAt)}
+                </thead>
+                <tbody className="divide-y divide-border-subtle">
+                  {generations.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-5 py-6 text-center text-[12px] text-text-subtle">
+                        No generations yet — try Chat, Script Studio, Image Studio or Thumbnail Studio.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    generations.map((g) => (
+                      <tr key={g.id}>
+                        <td className="px-5 py-3 text-foreground">{featureLabels[g.feature] ?? g.feature}</td>
+                        <td className="px-5 py-3 text-text-muted">{g.model}</td>
+                        <td className="px-5 py-3 font-mono text-foreground">{g.totalTokens ?? 0}</td>
+                        <td className="px-5 py-3 font-mono text-[11px] text-text-subtle">
+                          {formatGenerationTimestamp(g.createdAt)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
