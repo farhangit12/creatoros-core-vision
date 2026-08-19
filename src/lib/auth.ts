@@ -61,6 +61,12 @@ export const auth = betterAuth({
       },
     },
   },
+  socialProviders: {
+    google: {
+      clientId: process.env["GOOGLE_CLIENT_ID"] as string,
+      clientSecret: process.env["GOOGLE_CLIENT_SECRET"] as string,
+    },
+  },
   secret: process.env["BETTER_AUTH_SECRET"],
   baseURL: process.env["BETTER_AUTH_URL"],
   plugins: [tanstackStartCookies()],

@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
 import { AuthLayout } from "@/components/auth/auth-layout";
+import { GoogleAuthButton } from "@/components/auth/google-auth-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -151,6 +152,14 @@ function LoginPage() {
           )}
         </Button>
       </form>
+
+      <div className="my-5 flex items-center gap-3" aria-hidden>
+        <div className="h-px flex-1 bg-border" />
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">or</span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+
+      <GoogleAuthButton />
     </AuthLayout>
   );
 }
