@@ -261,7 +261,7 @@ User-requested pass across three studios: (1) rework Script Studio's and Thumbna
 
 **Verified live** (fresh throwaway account, real browser interaction, not just `tsc`): Script Studio generate → select → AI-action rewrite; Thumbnail Studio generate → Crop ratio change (confirmed via the frame's `aspect-square` class changing) → Resize preset selection (confirmed via the popover's own active-state styling) → lightbox open without card-selection side effect; Image Studio generate → lightbox open without card-selection side effect → Remove background toggle (confirmed real `e_background_removal` URL segment applied). One transient DB-insert error on a single Image Studio generation attempt self-resolved on immediate retry — unrelated to any file touched in this pass (no AI/DB code changed), not investigated further.
 
-`npx tsc --noEmit`: 0 errors. `npm run build`: clean. State: uncommitted (`src/lib/image-edit-transforms.ts`, `src/routes/_app.image-studio.tsx`, `src/routes/_app.script-studio.tsx`, `src/routes/_app.thumbnail-studio.tsx`, new `src/components/app/image-lightbox.tsx`).
+`npx tsc --noEmit`: 0 errors. `npm run build`: clean. Committed `4f577cb`, pushed to `origin/feature/v1-functional`.
 
 ## Small Gaps Cleanup (COMPLETE, verified live, 2026-08-20)
 
@@ -279,7 +279,7 @@ Closes out 4 of the 5 smaller gaps the previous "Next Likely Work" section had f
 
 `npx tsc --noEmit` and `npm run build`: both clean throughout. Committed `2ab505a`, pushed to `origin/feature/v1-functional`.
 
-### AI Usage — "Generation history" surfaces 6, rest in "View all" (COMPLETE, verified live, committed `<pending>`, 2026-08-20)
+### AI Usage — "Generation history" surfaces 6, rest in "View all" (COMPLETE, verified live, committed `45e1992`, 2026-08-20)
 
 User-requested UX change to the section added above: instead of a "Load more" button that kept extending the same table, "Generation history" now shows only its most recent 6 rows inline, with a **"View all (N)"** button (appearing only once there are more than 6, `N` = the real filtered count) opening a `Sheet` with the complete list — the exact same surface/`Sheet` pattern the Library page already established (`SURFACE_LIMIT`, a `View all (N)` button, `Sheet`/`SheetContent`/`SheetHeader`/`SheetTitle`/`SheetDescription`), reused here for consistency rather than inventing a second pattern. Replaces the "Load more" button from the same-day earlier change (superseded, not layered on top).
 
@@ -287,7 +287,7 @@ User-requested UX change to the section added above: instead of a "Load more" bu
 
 **Verified live** (same throwaway account, real data — 13 real generations, including 2 genuinely `failed` rows from an earlier transient DB hiccup, not fabricated): surface correctly capped at exactly 6 rows; "View all (13)" appeared and matched the real total; opening it showed all 13 rows in a `Sheet` styled consistently with the rest of the app; toggling the "Image generation" feature filter correctly re-scoped both the surface table and the already-open `Sheet` to the real 4-row subset and hid `View all` since it was no longer needed; clearing the filter restored the 6/13 split exactly.
 
-`npx tsc --noEmit` and `npm run build`: both clean. State: uncommitted (`src/routes/_app.ai-usage.tsx`).
+`npx tsc --noEmit` and `npm run build`: both clean. Committed `45e1992`.
 
 ## Next Likely Work
 
