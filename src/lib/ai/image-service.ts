@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { getImageProvider, resolveOperation } from "./registry";
 import { usageLogger } from "./usage";
 import type { GenerationRecord, ImageAsset, ThumbnailVariation } from "./types";
@@ -6,7 +5,7 @@ import type { ImageProviderAsset } from "./providers/types";
 
 function toImageAsset(asset: ImageProviderAsset): ImageAsset {
   return {
-    id: randomUUID(),
+    id: crypto.randomUUID(),
     url: asset.url,
     width: asset.width,
     height: asset.height,
@@ -117,7 +116,7 @@ export async function generateThumbnails(params: GenerateThumbnailsParams): Prom
       ...(params.referenceImageUrl !== undefined ? { sourceAssetUrl: params.referenceImageUrl } : {}),
     });
     const variations: ThumbnailVariation[] = result.assets.map((asset, i) => ({
-      id: randomUUID(),
+      id: crypto.randomUUID(),
       label: `Variation ${THUMBNAIL_LABELS[i] ?? String(i + 1)}`,
       recommended: asset.recommended,
       rationale: asset.recommended

@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
-import { randomUUID } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -11,8 +10,9 @@ import { resolveOperation } from "@/lib/ai/registry";
 import type { ChatMessage, ChatRole, GenerationRecord } from "@/lib/ai/types";
 import { buildAttachmentContext } from "@/lib/server/ai/chat-attachments";
 import { createUploadSignature, type UploadSignature } from "@/lib/server/files-storage";
-import { checkAndReserveCredits, deductCredits } from "@/lib/server/credits";
-import { CREDIT_COSTS } from "@/lib/credits";
+import { checkAndReserveCredits, deductCredits, getOrInitCreditAccount } from "@/lib/server/credits";
+import { CREDIT_COSTS, type PlanId } from "@/lib/credits";
+import { FeatureNotAvailableError, hasFeature } from "@/lib/plan-features";
 
 export type ConversationRecord = typeof aiConversations.$inferSelect;
 export type MessageRecord = typeof aiMessages.$inferSelect;
@@ -94,7 +94,7 @@ async function recordFailedGeneration(params: {
   const config = resolveOperation("chat");
   const completedAt = new Date();
   await db.insert(aiGenerations).values({
-    id: randomUUID(),
+    id: crypto.randomUUID(),
     userId: params.userId,
     conversationId: params.conversationId,
     feature: config.feature,
@@ -175,7 +175,7 @@ export const createConversation = createServerFn({ method: "POST" })
     const userId = await requireUserId();
     const [created] = await db
       .insert(aiConversations)
-      .values({ id: randomUUID(), userId, feature: "chat", title: data.title ?? null })
+      .values({ id: crypto.randomUUID(), userId, feature: "chat", title: data.title ?? null })
       .returning();
     return assertRow(created, "Failed to create conversation.");
   });
@@ -184,6 +184,10 @@ export const sendChatMessage = createServerFn({ method: "POST" })
   .validator((input: unknown) => sendMessageSchema.parse(input))
   .handler(async ({ data }) => {
     const userId = await requireUserId();
+    const account = await getOrInitCreditAccount(userId);
+    if (data.attachments?.length && !hasFeature(account.planId as PlanId, "chat.attachments")) {
+      throw new FeatureNotAvailableError("chat.attachments");
+    }
     await checkAndReserveCredits(userId, CREDIT_COSTS.chat);
     const startedAt = new Date();
 
@@ -193,7 +197,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
           (
             await db
               .insert(aiConversations)
-              .values({ id: randomUUID(), userId, feature: "chat" })
+              .values({ id: crypto.randomUUID(), userId, feature: "chat" })
               .returning()
           )[0],
           "Failed to create conversation.",
@@ -208,7 +212,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     const [userMessageRow] = await db
       .insert(aiMessages)
       .values({
-        id: randomUUID(),
+        id: crypto.randomUUID(),
         conversationId: conversation.id,
         userId,
         role: "user",
@@ -245,7 +249,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       const [assistantRow] = await db
         .insert(aiMessages)
         .values({
-          id: randomUUID(),
+          id: crypto.randomUUID(),
           conversationId: conversation.id,
           userId,
           role: "assistant",

@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
-import { randomUUID } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -86,7 +85,7 @@ export const createFileRecord = createServerFn({ method: "POST" })
     const [created] = await db
       .insert(files)
       .values({
-        id: randomUUID(),
+        id: crypto.randomUUID(),
         userId,
         projectId: data.projectId ?? null,
         name: data.name,
@@ -103,7 +102,7 @@ export const createFileRecord = createServerFn({ method: "POST" })
     const file = assertRow(created, "Failed to save file.");
     if (data.projectId) {
       await db.insert(projectActivity).values({
-        id: randomUUID(),
+        id: crypto.randomUUID(),
         projectId: data.projectId,
         userId,
         action: "File uploaded",

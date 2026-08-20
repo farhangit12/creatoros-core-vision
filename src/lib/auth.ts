@@ -68,6 +68,24 @@ export const auth = betterAuth({
       clientSecret: process.env["GOOGLE_CLIENT_SECRET"] as string,
     },
   },
+  // Without this, better-auth blocks Google sign-in with "account_not_linked"
+  // for every existing email/password user (traced to
+  // node_modules/better-auth/dist/oauth2/link-account.mjs's
+  // requireLocalEmailVerified check, which defaults to true and compares
+  // against the LOCAL account's emailVerified) -- this app never verifies
+  // email at signup for any account (see the emailVerification comment
+  // above), so that check fails unconditionally. Trade-off, accepted for now
+  // per user decision: this reopens the standard email/password-then-OAuth
+  // account-linking attack (attacker pre-registers your email, you later
+  // "Sign in with Google" and get silently linked to their account) -- low
+  // stakes today since there are no real users/payments yet. Revisit once
+  // there are (e.g. by turning on real email verification and removing this
+  // override, rather than leaving it permanently disabled).
+  account: {
+    accountLinking: {
+      requireLocalEmailVerified: false,
+    },
+  },
   databaseHooks: {
     user: {
       create: {

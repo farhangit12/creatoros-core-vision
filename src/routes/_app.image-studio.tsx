@@ -63,7 +63,9 @@ import { linkAssetToProject } from "@/lib/server/project-content";
 import { getGeneration } from "@/lib/server/ai/history";
 import { getUserSettings } from "@/lib/server/settings";
 import { getCreditBalance } from "@/lib/server/credits";
-import { imageCost } from "@/lib/credits";
+import { imageCost, isUnlimitedPlan, type PlanId } from "@/lib/credits";
+import { hasFeature, maxImageBatch } from "@/lib/plan-features";
+import { PaidFeatureLock } from "@/components/app/paid-feature-gate";
 import { useSession } from "@/lib/auth-client";
 import { platforms } from "@/lib/creator-data";
 import { useDraftAutosave } from "@/lib/local-draft-storage";
@@ -247,6 +249,12 @@ function ImageStudioPage() {
     queryKey: ["credit-balance"],
     queryFn: () => getCreditBalanceFn(),
   });
+  const planId = (creditAccount?.planId as PlanId | undefined) ?? "free";
+  const planUnlimited = isUnlimitedPlan(planId);
+  const canReferenceImage = hasFeature(planId, "image.referenceImage");
+  const canUpscale = hasFeature(planId, "image.upscale");
+  const canRemoveBackground = hasFeature(planId, "image.removeBackground");
+  const imageBatchLimit = maxImageBatch(planId);
 
   useEffect(() => {
     if (!search.reedit) return;
@@ -450,8 +458,15 @@ function ImageStudioPage() {
 
   const selectedImage = images.find((i) => i.id === selected);
   const compareImages = images.filter((i) => compareIds.includes(i.id));
+  const effectiveUpscale = upscale && canUpscale;
+  const effectiveRemoveBackground = removeBackground && canRemoveBackground;
   const editedImageUrl = selectedImage
-    ? applyImageEdits(selectedImage.url, { shadows, highlights, upscale, removeBackground })
+    ? applyImageEdits(selectedImage.url, {
+        shadows,
+        highlights,
+        upscale: effectiveUpscale,
+        removeBackground: effectiveRemoveBackground,
+      })
     : undefined;
 
   useEffect(() => {
@@ -543,64 +558,66 @@ function ImageStudioPage() {
                   e.target.value = "";
                 }}
               />
-              {referencePreview ? (
-                <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-2/60 p-2.5">
-                  <div className="relative size-14 shrink-0 overflow-hidden rounded-md bg-surface-3">
-                    <img src={referencePreview} alt="" className="size-full object-cover" />
-                    {referenceUploading ? (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                        <Loader2 className="size-4 animate-spin text-white" />
-                      </div>
-                    ) : null}
+              <PaidFeatureLock enabled={canReferenceImage} label="reference image upload" className="block">
+                {referencePreview ? (
+                  <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-2/60 p-2.5">
+                    <div className="relative size-14 shrink-0 overflow-hidden rounded-md bg-surface-3">
+                      <img src={referencePreview} alt="" className="size-full object-cover" />
+                      {referenceUploading ? (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                          <Loader2 className="size-4 animate-spin text-white" />
+                        </div>
+                      ) : null}
+                    </div>
+                    <p className="flex-1 text-[12px] text-text-muted">
+                      {referenceUploading ? "Uploading…" : "Reference image ready"}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-7"
+                      onClick={clearReferenceImage}
+                      aria-label="Remove reference image"
+                    >
+                      <X className="size-3.5" />
+                    </Button>
                   </div>
-                  <p className="flex-1 text-[12px] text-text-muted">
-                    {referenceUploading ? "Uploading…" : "Reference image ready"}
-                  </p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-7"
-                    onClick={clearReferenceImage}
-                    aria-label="Remove reference image"
-                  >
-                    <X className="size-3.5" />
-                  </Button>
-                </div>
-              ) : (
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => referenceInputRef.current?.click()}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
+                ) : (
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => canReferenceImage && referenceInputRef.current?.click()}
+                    onKeyDown={(e) => {
+                      if (canReferenceImage && (e.key === "Enter" || e.key === " ")) {
+                        e.preventDefault();
+                        referenceInputRef.current?.click();
+                      }
+                    }}
+                    onDragOver={(e) => {
                       e.preventDefault();
-                      referenceInputRef.current?.click();
-                    }
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setReferenceDragOver(true);
-                  }}
-                  onDragLeave={() => setReferenceDragOver(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setReferenceDragOver(false);
-                    const file = e.dataTransfer.files?.[0];
-                    if (file) void handleReferenceFile(file);
-                  }}
-                  className={cn(
-                    "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-8 text-center transition-colors duration-150",
-                    referenceDragOver
-                      ? "border-accent-brand/60 bg-accent-tint"
-                      : "border-border bg-surface-2/60 hover:border-accent-brand/40",
-                  )}
-                >
-                  <UploadCloud className="size-5 text-text-subtle" />
-                  <p className="text-[12px] text-text-subtle">Drag an image or browse</p>
-                  <p className="text-[10px] text-text-subtle/70">JPEG, PNG or WebP, up to 8MB</p>
-                </div>
-              )}
+                      setReferenceDragOver(true);
+                    }}
+                    onDragLeave={() => setReferenceDragOver(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setReferenceDragOver(false);
+                      const file = e.dataTransfer.files?.[0];
+                      if (file) void handleReferenceFile(file);
+                    }}
+                    className={cn(
+                      "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-8 text-center transition-colors duration-150",
+                      referenceDragOver
+                        ? "border-accent-brand/60 bg-accent-tint"
+                        : "border-border bg-surface-2/60 hover:border-accent-brand/40",
+                    )}
+                  >
+                    <UploadCloud className="size-5 text-text-subtle" />
+                    <p className="text-[12px] text-text-subtle">Drag an image or browse</p>
+                    <p className="text-[10px] text-text-subtle/70">JPEG, PNG or WebP, up to 8MB</p>
+                  </div>
+                )}
+              </PaidFeatureLock>
             </Field>
             <Field label="Variations">
               <ChipGroup
@@ -608,16 +625,22 @@ function ImageStudioPage() {
                 value={String(count)}
                 onChange={(v) => setCount(Number(v) as (typeof counts)[number])}
               />
+              {count > imageBatchLimit ? (
+                <p className="text-[11px] text-danger">
+                  Your plan allows up to {imageBatchLimit} at a time — upgrade to generate more per batch.
+                </p>
+              ) : null}
             </Field>
             <div className="flex items-center justify-between pt-1">
-              <CostHint credits={imageCost(count)} balance={creditAccount?.balance} />
+              <CostHint credits={imageCost(count)} balance={planUnlimited ? undefined : creditAccount?.balance} />
               <Button
                 size="sm"
                 onClick={generate}
                 disabled={
                   status === "generating" ||
                   !prompt.trim() ||
-                  (creditAccount ? creditAccount.balance < imageCost(count) : false)
+                  count > imageBatchLimit ||
+                  (creditAccount && !planUnlimited ? creditAccount.balance < imageCost(count) : false)
                 }
               >
                 {status === "generating" ? "Generating…" : "Generate"}
@@ -719,7 +742,9 @@ function ImageStudioPage() {
                           size="sm"
                           variant="outline"
                           className="w-full"
-                          disabled={creditAccount ? creditAccount.balance < imageCost(count) : false}
+                          disabled={
+                            creditAccount && !planUnlimited ? creditAccount.balance < imageCost(count) : false
+                          }
                           onClick={(e) => {
                             e.stopPropagation();
                             generate();
@@ -732,7 +757,9 @@ function ImageStudioPage() {
                           size="sm"
                           variant="outline"
                           className="w-full"
-                          disabled={creditAccount ? creditAccount.balance < imageCost(1) : false}
+                          disabled={
+                            creditAccount && !planUnlimited ? creditAccount.balance < imageCost(1) : false
+                          }
                           onClick={(e) => {
                             e.stopPropagation();
                             createVariation(img.id);
@@ -742,7 +769,10 @@ function ImageStudioPage() {
                           Create variation
                         </Button>
                         <div className="text-center">
-                          <CostHint credits={imageCost(1)} balance={creditAccount?.balance} />
+                          <CostHint
+                            credits={imageCost(1)}
+                            balance={planUnlimited ? undefined : creditAccount?.balance}
+                          />
                         </div>
                       </div>
                     }
@@ -857,7 +887,9 @@ function ImageStudioPage() {
                   <div className="space-y-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5">
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-[12px] text-text-muted">AI upscale</span>
-                      <Switch checked={upscale} onCheckedChange={setUpscale} />
+                      <PaidFeatureLock enabled={canUpscale} label="AI upscale">
+                        <Switch checked={upscale} onCheckedChange={setUpscale} disabled={!canUpscale} />
+                      </PaidFeatureLock>
                     </div>
                     <p className="text-[10px] text-text-subtle">
                       4x resolution. First render can take a few seconds.
@@ -871,15 +903,18 @@ function ImageStudioPage() {
                   <RotateCcw className="size-3.5" />
                   Reset all
                 </Button>
-                <Button
-                  size="sm"
-                  variant={removeBackground ? "default" : "outline"}
-                  aria-pressed={removeBackground}
-                  onClick={() => setRemoveBackground((v) => !v)}
-                >
-                  <Eraser className="size-3.5" />
-                  {removeBackground ? "Background removed" : "Remove background"}
-                </Button>
+                <PaidFeatureLock enabled={canRemoveBackground} label="Remove background">
+                  <Button
+                    size="sm"
+                    variant={removeBackground ? "default" : "outline"}
+                    aria-pressed={removeBackground}
+                    disabled={!canRemoveBackground}
+                    onClick={() => canRemoveBackground && setRemoveBackground((v) => !v)}
+                  >
+                    <Eraser className="size-3.5" />
+                    {removeBackground ? "Background removed" : "Remove background"}
+                  </Button>
+                </PaidFeatureLock>
               </div>
             </Panel>
           ) : null}

@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
-import { randomUUID } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -90,7 +89,7 @@ export const createPlannerItem = createServerFn({ method: "POST" })
     const [created] = await db
       .insert(plannerItems)
       .values({
-        id: randomUUID(),
+        id: crypto.randomUUID(),
         userId,
         projectId: data.projectId ?? null,
         title: data.title,

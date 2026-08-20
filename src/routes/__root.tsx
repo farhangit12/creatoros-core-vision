@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { THEME_INIT_SCRIPT } from "../lib/theme";
+import { BUFFER_POLYFILL_SCRIPT } from "../lib/buffer-polyfill";
 
 function NotFoundComponent() {
   return (
@@ -121,6 +122,8 @@ function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
+        {/* eslint-disable-next-line react/no-danger -- static, trusted script; must run before any bundled module references the bare global `Buffer` */}
+        <script dangerouslySetInnerHTML={{ __html: BUFFER_POLYFILL_SCRIPT }} />
         {/* eslint-disable-next-line react/no-danger -- static, trusted script; must run before HeadContent's stylesheet to avoid a theme flash */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <HeadContent />

@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
-import { randomUUID } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -44,7 +43,7 @@ async function recordActivity(params: {
   detail?: string | null;
 }): Promise<void> {
   await db.insert(projectActivity).values({
-    id: randomUUID(),
+    id: crypto.randomUUID(),
     projectId: params.projectId,
     userId: params.userId,
     action: params.action,
@@ -102,7 +101,7 @@ export const createProject = createServerFn({ method: "POST" })
     const [created] = await db
       .insert(projects)
       .values({
-        id: randomUUID(),
+        id: crypto.randomUUID(),
         userId,
         name: data.name,
         description: data.description ?? null,
@@ -178,7 +177,7 @@ export const duplicateProject = createServerFn({ method: "POST" })
     const [created] = await db
       .insert(projects)
       .values({
-        id: randomUUID(),
+        id: crypto.randomUUID(),
         userId,
         name: `${source.name} (copy)`,
         description: source.description,

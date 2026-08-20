@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
-import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -9,8 +8,9 @@ import { aiAssets, aiConversations, aiGenerations } from "@/db/schema";
 import { createVariation, generateImages } from "@/lib/ai/image-service";
 import { resolveOperation } from "@/lib/ai/registry";
 import { uploadImageToCloudinary } from "@/lib/ai/providers/image/cloudinary-upload";
-import { checkAndReserveCredits, checkGlobalImageCapacity, deductCredits } from "@/lib/server/credits";
-import { imageCost } from "@/lib/credits";
+import { checkAndReserveCredits, checkGlobalImageCapacity, deductCredits, getOrInitCreditAccount } from "@/lib/server/credits";
+import { imageCost, type PlanId } from "@/lib/credits";
+import { BatchLimitExceededError, FeatureNotAvailableError, hasFeature, maxImageBatch } from "@/lib/plan-features";
 import type { GenerationRecord, ImageAsset } from "@/lib/ai/types";
 import type { ImageOperation } from "@/lib/ai/operations";
 
@@ -109,7 +109,7 @@ async function recordFailedGeneration(params: {
   const config = resolveOperation(params.operation);
   const completedAt = new Date();
   await db.insert(aiGenerations).values({
-    id: randomUUID(),
+    id: crypto.randomUUID(),
     userId: params.userId,
     conversationId: params.conversationId ?? null,
     feature: config.feature,
@@ -184,6 +184,15 @@ export const generateImageAction = createServerFn({ method: "POST" })
     const userId = await requireUserId();
     if (data.conversationId) {
       await assertOwnedConversation(userId, data.conversationId);
+    }
+    const account = await getOrInitCreditAccount(userId);
+    const planId = account.planId as PlanId;
+    if (data.referenceImageUrl && !hasFeature(planId, "image.referenceImage")) {
+      throw new FeatureNotAvailableError("image.referenceImage");
+    }
+    const batchLimit = maxImageBatch(planId);
+    if (data.count > batchLimit) {
+      throw new BatchLimitExceededError(batchLimit, data.count);
     }
     const cost = imageCost(data.count);
     await checkAndReserveCredits(userId, cost);

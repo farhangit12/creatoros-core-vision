@@ -13,6 +13,10 @@ export interface PlanDefinition {
   name: string;
   monthlyPriceUsd: number;
   monthlyCredits: number;
+  /** When true, credit enforcement is skipped entirely (see server/credits.ts).
+   * monthlyCredits stays a real number as an unused baseline/safety net for
+   * any call site that forgets to check this flag first. */
+  unlimited?: boolean;
 }
 
 // Scale's credits were halved from an earlier 8,000/mo draft after checking
@@ -27,8 +31,19 @@ export interface PlanDefinition {
 export const PLANS: Record<PlanId, PlanDefinition> = {
   free: { id: "free", name: "Free", monthlyPriceUsd: 0, monthlyCredits: 150 },
   pro: { id: "pro", name: "Pro", monthlyPriceUsd: 29, monthlyCredits: 2000 },
-  scale: { id: "scale", name: "Scale", monthlyPriceUsd: 79, monthlyCredits: 4000 },
+  scale: { id: "scale", name: "Scale", monthlyPriceUsd: 79, monthlyCredits: 4000, unlimited: true },
 };
+
+/** "Unlimited" for Scale, otherwise the real monthly credit amount --
+ * the one place both Billing and AI Usage should read this from so the
+ * label can never drift between pages. */
+export function formatCredits(plan: PlanDefinition): string {
+  return plan.unlimited ? "Unlimited" : `${plan.monthlyCredits.toLocaleString()} credits`;
+}
+
+export function isUnlimitedPlan(planId: PlanId): boolean {
+  return PLANS[planId]?.unlimited === true;
+}
 
 export const CREDIT_COSTS = {
   chat: 4,

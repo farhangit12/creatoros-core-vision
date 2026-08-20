@@ -18,7 +18,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { cn } from "@/lib/utils";
 import { getUsageSummary, listGenerations } from "@/lib/server/ai/ai-usage";
 import { getCreditBalance } from "@/lib/server/credits";
-import { PLANS } from "@/lib/credits";
+import { PLANS, isUnlimitedPlan, type PlanId } from "@/lib/credits";
 
 export const Route = createFileRoute("/_app/ai-usage")({
   head: () => ({
@@ -200,7 +200,10 @@ function AiUsagePage() {
             {creditAccount && creditPlan ? (
               <>
                 <p className="mt-5 text-[15px] font-medium tracking-[-0.02em] text-foreground">
-                  {creditPlan.name} — {creditAccount.balance.toLocaleString()} credits left
+                  {creditPlan.name} —{" "}
+                  {isUnlimitedPlan(creditAccount.planId as PlanId)
+                    ? "Unlimited credits"
+                    : `${creditAccount.balance.toLocaleString()} credits left`}
                 </p>
                 <p className="mt-2 text-[13px] text-text-muted">
                   Renews {new Date(creditAccount.renewsAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}

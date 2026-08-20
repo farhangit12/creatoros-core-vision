@@ -7,7 +7,7 @@ import { PageHeader, SectionLabel } from "@/components/app/primitives";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getCreditBalance } from "@/lib/server/credits";
-import { PLANS } from "@/lib/credits";
+import { PLANS, formatCredits, isUnlimitedPlan, type PlanId } from "@/lib/credits";
 
 export const Route = createFileRoute("/_app/billing")({
   head: () => ({
@@ -75,10 +75,9 @@ const plans = [
     tagline: "High-volume creators / creator businesses.",
     cta: "Upgrade to Scale",
     features: [
-      `${PLANS.scale.monthlyCredits.toLocaleString()} CreatorOS credits / month`,
+      "Unlimited CreatorOS credits / month",
       "Everything in Pro",
-      "Higher generation limits",
-      "Higher image-generation allowance",
+      "No monthly generation cap",
       "Higher project/storage allowance",
       "Advanced usage visibility",
       "Early access to new capabilities",
@@ -90,14 +89,14 @@ const plans = [
 const comparisonRows = [
   {
     feature: "Monthly Credits",
-    free: `${PLANS.free.monthlyCredits.toLocaleString()} credits`,
-    pro: `${PLANS.pro.monthlyCredits.toLocaleString()} credits`,
-    scale: `${PLANS.scale.monthlyCredits.toLocaleString()} credits`,
+    free: formatCredits(PLANS.free),
+    pro: formatCredits(PLANS.pro),
+    scale: formatCredits(PLANS.scale),
   },
   { feature: "AI Creation", free: "Chat, Script, Basic Visuals", pro: "Full Script, Image & Thumbnail Studios", scale: "Full Studios + Higher Allowance" },
   { feature: "Projects", free: "Limited (3 active)", pro: "Unlimited", scale: "Unlimited" },
   { feature: "Content Planner", free: "Standard Calendar", pro: "Standard Calendar", scale: "Standard + Extended Queue" },
-  { feature: "Usage Limits", free: "Discovery cap", pro: "Higher creator limits", scale: "Highest per-user allowance" },
+  { feature: "Usage Limits", free: "Discovery cap", pro: "Higher creator limits", scale: "Unlimited (fair-use limits apply during high shared demand)" },
 ];
 
 function notifyUnavailable() {
@@ -113,6 +112,7 @@ function BillingPage() {
     queryFn: () => getCreditBalanceFn(),
   });
   const currentPlan = account ? (PLANS[account.planId as keyof typeof PLANS] ?? PLANS.free) : undefined;
+  const currentPlanUnlimited = account ? isUnlimitedPlan(account.planId as PlanId) : false;
 
   return (
     <div className="space-y-12">
@@ -129,7 +129,9 @@ function BillingPage() {
             <>
               <p className="text-[15px] font-medium text-foreground">{currentPlan.name} plan</p>
               <p className="mt-2 font-mono text-[13px] text-accent-brand">
-                {account.balance.toLocaleString()} of {currentPlan.monthlyCredits.toLocaleString()} credits remaining
+                {currentPlanUnlimited
+                  ? "Unlimited credits"
+                  : `${account.balance.toLocaleString()} of ${currentPlan.monthlyCredits.toLocaleString()} credits remaining`}
               </p>
               <p className="mt-2 text-[13px] text-text-subtle">
                 Renews {new Date(account.renewsAt).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
@@ -169,7 +171,7 @@ function BillingPage() {
                   <span className="text-[13px] font-normal text-text-subtle">/month</span>
                 </p>
                 <p className="mt-2 font-mono text-[11px] text-accent-brand">
-                  {p.monthlyCredits.toLocaleString()} CreatorOS credits
+                  {p.unlimited ? "Unlimited CreatorOS credits" : `${p.monthlyCredits.toLocaleString()} CreatorOS credits`}
                 </p>
               </div>
 

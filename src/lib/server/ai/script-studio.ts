@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
-import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -8,8 +7,9 @@ import { auth } from "@/lib/auth";
 import { aiConversations, aiGenerations } from "@/db/schema";
 import { generateScript, rewriteScript } from "@/lib/ai/text-service";
 import { resolveOperation } from "@/lib/ai/registry";
-import { checkAndReserveCredits, deductCredits } from "@/lib/server/credits";
-import { scriptGenerateCost, scriptRewriteCost } from "@/lib/credits";
+import { checkAndReserveCredits, deductCredits, getOrInitCreditAccount } from "@/lib/server/credits";
+import { scriptGenerateCost, scriptRewriteCost, type PlanId } from "@/lib/credits";
+import { FeatureNotAvailableError, hasFeature } from "@/lib/plan-features";
 import type { GenerationRecord } from "@/lib/ai/types";
 import type { TextOperation } from "@/lib/ai/operations";
 
@@ -71,7 +71,7 @@ async function recordFailedGeneration(params: {
   const config = resolveOperation(params.operation);
   const completedAt = new Date();
   await db.insert(aiGenerations).values({
-    id: randomUUID(),
+    id: crypto.randomUUID(),
     userId: params.userId,
     conversationId: params.conversationId ?? null,
     feature: config.feature,
@@ -114,6 +114,10 @@ export const generateScriptAction = createServerFn({ method: "POST" })
     const userId = await requireUserId();
     if (data.conversationId) {
       await assertOwnedConversation(userId, data.conversationId);
+    }
+    const account = await getOrInitCreditAccount(userId);
+    if (data.multiOption && !hasFeature(account.planId as PlanId, "script.multiOption")) {
+      throw new FeatureNotAvailableError("script.multiOption");
     }
     const cost = scriptGenerateCost(data.multiOption);
     await checkAndReserveCredits(userId, cost);

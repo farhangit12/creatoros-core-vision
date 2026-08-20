@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
-import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -8,8 +7,9 @@ import { auth } from "@/lib/auth";
 import { aiAssets, aiConversations, aiGenerations } from "@/db/schema";
 import { generateThumbnails } from "@/lib/ai/image-service";
 import { resolveOperation } from "@/lib/ai/registry";
-import { checkAndReserveCredits, checkGlobalImageCapacity, deductCredits } from "@/lib/server/credits";
-import { imageCost } from "@/lib/credits";
+import { checkAndReserveCredits, checkGlobalImageCapacity, deductCredits, getOrInitCreditAccount } from "@/lib/server/credits";
+import { imageCost, type PlanId } from "@/lib/credits";
+import { BatchLimitExceededError, FeatureNotAvailableError, hasFeature, maxThumbnailBatch } from "@/lib/plan-features";
 import type { GenerationRecord, ThumbnailVariation } from "@/lib/ai/types";
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
@@ -94,7 +94,7 @@ async function recordFailedGeneration(params: {
   const config = resolveOperation("thumbnail.generate");
   const completedAt = new Date();
   await db.insert(aiGenerations).values({
-    id: randomUUID(),
+    id: crypto.randomUUID(),
     userId: params.userId,
     conversationId: params.conversationId ?? null,
     feature: config.feature,
@@ -130,7 +130,17 @@ export const generateThumbnailAction = createServerFn({ method: "POST" })
     if (data.conversationId) {
       await assertOwnedConversation(userId, data.conversationId);
     }
-    const cost = imageCost(data.count ?? 1);
+    const account = await getOrInitCreditAccount(userId);
+    const planId = account.planId as PlanId;
+    if (data.referenceImageUrl && !hasFeature(planId, "thumbnail.referenceImage")) {
+      throw new FeatureNotAvailableError("thumbnail.referenceImage");
+    }
+    const requestedCount = data.count ?? 1;
+    const batchLimit = maxThumbnailBatch(planId);
+    if (requestedCount > batchLimit) {
+      throw new BatchLimitExceededError(batchLimit, requestedCount);
+    }
+    const cost = imageCost(requestedCount);
     await checkAndReserveCredits(userId, cost);
     await checkGlobalImageCapacity();
     const startedAt = new Date();

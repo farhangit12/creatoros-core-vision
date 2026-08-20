@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
@@ -42,6 +41,27 @@ export class DailyImageCapacityError extends Error {
   }
 }
 
+export class DailyCreditCapExceededError extends Error {
+  constructor(
+    public cap: number,
+    public spentToday: number,
+  ) {
+    super(
+      `You've used ${spentToday} of your ${cap} daily credits — this fair-use limit resets at midnight UTC.`,
+    );
+    this.name = "DailyCreditCapExceededError";
+  }
+}
+
+// Fair-use ceiling for unlimited (Scale) accounts only -- without it, a
+// single Scale user could consume most of the shared SAFE_DAILY_IMAGE_CAP
+// alone, starving every other user for the rest of the day. Deliberately
+// generous relative to real observed usage (see the credits-system live
+// verification in CLAUDE.md) so it's never hit in normal use. Env-overridable
+// for the same reseller reason as DAILY_IMAGE_CAP below -- a buyer who scales
+// their own infra should be able to raise it without a code change.
+const SCALE_DAILY_CREDIT_CAP = Number(process.env["SCALE_DAILY_CREDIT_CAP"] ?? 500);
+
 /** Mirrors settings.ts's loadOrCreateSettings pattern: lazily creates a
  * Free-tier account on first read, so an account created before the
  * databaseHooks wiring (or if that hook ever fails) is never left without a
@@ -59,7 +79,7 @@ async function loadOrCreateAccount(userId: string): Promise<CreditAccountRecord>
     .returning();
   if (created) {
     await db.insert(creditLedger).values({
-      id: randomUUID(),
+      id: crypto.randomUUID(),
       userId,
       delta: plan.monthlyCredits,
       reason: "signup_bonus",
@@ -87,7 +107,7 @@ async function applyMonthlyResetIfDue(account: CreditAccountRecord): Promise<Cre
     .returning();
   const finalRow = updated ?? account;
   await db.insert(creditLedger).values({
-    id: randomUUID(),
+    id: crypto.randomUUID(),
     userId: account.userId,
     delta: plan.monthlyCredits - account.balance,
     reason: "monthly_reset",
@@ -116,11 +136,38 @@ export async function initCreditAccountForNewUser(userId: string): Promise<void>
   await loadOrCreateAccount(userId);
 }
 
+/** Sums today's (UTC) real ai_generation ledger deltas for a user -- reuses
+ * credit_ledger directly (already written for unlimited plans by
+ * deductCredits below), no new counter table needed. Mirrors
+ * checkGlobalImageCapacity's reuse-the-existing-table approach. */
+async function getTodaysCreditSpend(userId: string): Promise<number> {
+  const [row] = await db
+    .select({ value: sql<number>`COALESCE(SUM(-${creditLedger.delta}), 0)` })
+    .from(creditLedger)
+    .where(
+      and(
+        eq(creditLedger.userId, userId),
+        eq(creditLedger.reason, "ai_generation"),
+        gte(creditLedger.createdAt, utcMidnightToday()),
+      ),
+    );
+  return Number(row?.value ?? 0);
+}
+
 /** Throws InsufficientCreditsError if the balance can't cover cost. Call
  * this BEFORE the AI provider call so a doomed request never spends free-
- * tier request budget on output that gets discarded. */
+ * tier request budget on output that gets discarded. Unlimited plans (Scale)
+ * skip the balance check but are still subject to SCALE_DAILY_CREDIT_CAP, a
+ * per-user fair-use ceiling (see DailyCreditCapExceededError above). */
 export async function checkAndReserveCredits(userId: string, cost: number): Promise<void> {
   const account = await getOrInitCreditAccount(userId);
+  if (PLANS[account.planId as PlanId]?.unlimited) {
+    const spentToday = await getTodaysCreditSpend(userId);
+    if (spentToday + cost > SCALE_DAILY_CREDIT_CAP) {
+      throw new DailyCreditCapExceededError(SCALE_DAILY_CREDIT_CAP, spentToday);
+    }
+    return;
+  }
   if (account.balance < cost) {
     throw new InsufficientCreditsError(cost, account.balance);
   }
@@ -129,12 +176,31 @@ export async function checkAndReserveCredits(userId: string, cost: number): Prom
 /** Atomically decrements the balance and logs a ledger row. Call this only
  * after a generation has been persisted as completed -- a failed generation
  * is never charged. The WHERE balance >= cost guard makes this safe even if
- * a race slipped past checkAndReserveCredits. */
+ * a race slipped past checkAndReserveCredits.
+ *
+ * Unlimited plans (Scale) skip the balance-decrementing UPDATE and its guard
+ * entirely -- without this, a heavy Scale user's stored balance would
+ * eventually dip below `cost` and get wrongly blocked despite the plan being
+ * unlimited. The ledger row is still written so AI Usage history and any
+ * future admin/ops analytics stay accurate. */
 export async function deductCredits(params: {
   userId: string;
   cost: number;
   generationId: string;
 }): Promise<void> {
+  const account = await getOrInitCreditAccount(params.userId);
+  if (PLANS[account.planId as PlanId]?.unlimited) {
+    await db.insert(creditLedger).values({
+      id: crypto.randomUUID(),
+      userId: params.userId,
+      delta: -params.cost,
+      reason: "ai_generation",
+      generationId: params.generationId,
+      balanceAfter: account.balance,
+    });
+    return;
+  }
+
   const [updated] = await db
     .update(userCredits)
     .set({ balance: sql`${userCredits.balance} - ${params.cost}`, updatedAt: new Date() })
@@ -144,7 +210,7 @@ export async function deductCredits(params: {
     throw new InsufficientCreditsError(params.cost, 0);
   }
   await db.insert(creditLedger).values({
-    id: randomUUID(),
+    id: crypto.randomUUID(),
     userId: params.userId,
     delta: -params.cost,
     reason: "ai_generation",
@@ -155,8 +221,11 @@ export async function deductCredits(params: {
 
 // Conservative 25% headroom under the researched ~2,000/day Cloudflare
 // Workers AI free-tier estimate for this app's image sizes -- see the
-// billing/credits plan for the full capacity research.
-const SAFE_DAILY_IMAGE_CAP = 1500;
+// billing/credits plan for the full capacity research. Env-overridable
+// because this codebase is sold as a one-time product: a buyer who upgrades
+// their own Cloudflare Workers AI plan can raise this ceiling themselves via
+// DAILY_IMAGE_CAP without needing a code change from the original developer.
+const SAFE_DAILY_IMAGE_CAP = Number(process.env["DAILY_IMAGE_CAP"] ?? 1500);
 
 function utcMidnightToday(): Date {
   const now = new Date();

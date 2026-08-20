@@ -78,7 +78,9 @@ import {
 } from "@/lib/server/ai/chat";
 import { getUserSettings } from "@/lib/server/settings";
 import { getCreditBalance } from "@/lib/server/credits";
-import { CREDIT_COSTS } from "@/lib/credits";
+import { CREDIT_COSTS, isUnlimitedPlan, type PlanId } from "@/lib/credits";
+import { hasFeature } from "@/lib/plan-features";
+import { PaidFeatureLock } from "@/components/app/paid-feature-gate";
 import { useSession } from "@/lib/auth-client";
 import { useDraftAutosave } from "@/lib/local-draft-storage";
 
@@ -221,7 +223,11 @@ function ChatPageImpl() {
     queryKey: ["credit-balance"],
     queryFn: () => getCreditBalanceFn(),
   });
-  const insufficientCredits = creditAccount ? creditAccount.balance < CREDIT_COSTS.chat : false;
+  const planId = (creditAccount?.planId as PlanId | undefined) ?? "free";
+  const planUnlimited = isUnlimitedPlan(planId);
+  const canAttach = hasFeature(planId, "chat.attachments");
+  const insufficientCredits =
+    creditAccount && !planUnlimited ? creditAccount.balance < CREDIT_COSTS.chat : false;
   useEffect(() => {
     if (settings?.defaultAiTone && tones.includes(settings.defaultAiTone)) {
       setToneValue(settings.defaultAiTone);
@@ -832,15 +838,18 @@ function ChatPageImpl() {
               }}
             />
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8 text-text-subtle hover:text-foreground"
-                onClick={() => fileInputRef.current?.click()}
-                aria-label="Attach files"
-              >
-                <Paperclip className="size-4" />
-              </Button>
+              <PaidFeatureLock enabled={canAttach} label="file attachments">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 text-text-subtle hover:text-foreground"
+                  onClick={() => canAttach && fileInputRef.current?.click()}
+                  aria-label="Attach files"
+                  disabled={!canAttach}
+                >
+                  <Paperclip className="size-4" />
+                </Button>
+              </PaidFeatureLock>
               <Select value={toneValue} onValueChange={setToneValue}>
                 <SelectTrigger className="h-8 w-[140px] text-[12px]">
                   <SelectValue />
@@ -854,7 +863,7 @@ function ChatPageImpl() {
                 </SelectContent>
               </Select>
               <div className="ml-auto flex items-center gap-3">
-                <CostHint credits={CREDIT_COSTS.chat} balance={creditAccount?.balance} />
+                <CostHint credits={CREDIT_COSTS.chat} balance={planUnlimited ? undefined : creditAccount?.balance} />
                 {isGenerating ? (
                   <Button size="sm" variant="outline" onClick={stopGeneration} className="gap-1.5">
                     <Square className="size-3.5" /> Stop

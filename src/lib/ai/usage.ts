@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { AiFeature, AiOperation } from "./operations";
 import type { GenerationRecord, TokenUsage } from "./types";
 
@@ -44,7 +43,7 @@ class InMemoryUsageLogger implements UsageLogger {
 
   start(params: StartGenerationParams): GenerationRecord {
     const record: GenerationRecord = {
-      id: randomUUID(),
+      id: crypto.randomUUID(),
       userId: params.userId,
       feature: params.feature,
       operation: params.operation,

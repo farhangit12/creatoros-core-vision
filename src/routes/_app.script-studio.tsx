@@ -56,7 +56,9 @@ import { generateScriptAction, rewriteScriptAction } from "@/lib/server/ai/scrip
 import { getGeneration } from "@/lib/server/ai/history";
 import { getUserSettings } from "@/lib/server/settings";
 import { getCreditBalance } from "@/lib/server/credits";
-import { scriptGenerateCost, scriptRewriteCost } from "@/lib/credits";
+import { isUnlimitedPlan, scriptGenerateCost, scriptRewriteCost, type PlanId } from "@/lib/credits";
+import { hasFeature } from "@/lib/plan-features";
+import { PaidFeatureLock } from "@/components/app/paid-feature-gate";
 import { useSession } from "@/lib/auth-client";
 import { platforms } from "@/lib/creator-data";
 import { useDraftAutosave } from "@/lib/local-draft-storage";
@@ -129,6 +131,9 @@ function ScriptStudioPage() {
     queryKey: ["credit-balance"],
     queryFn: () => getCreditBalanceFn(),
   });
+  const planId = (creditAccount?.planId as PlanId | undefined) ?? "free";
+  const planUnlimited = isUnlimitedPlan(planId);
+  const canMultiOption = hasFeature(planId, "script.multiOption");
   useEffect(() => {
     if (settings?.defaultAiTone && tones.includes(settings.defaultAiTone)) {
       setTone(settings.defaultAiTone);
@@ -136,6 +141,7 @@ function ScriptStudioPage() {
   }, [settings?.userId]);
   const [creativity, setCreativity] = useState([55]);
   const [multiOption, setMultiOption] = useState(true);
+  const effectiveMultiOption = multiOption && canMultiOption;
 
   const [scriptOptions, setScriptOptions] = useState<ScriptOption[]>([]);
   const [hasGenerated, setHasGenerated] = useState(false);
@@ -256,7 +262,7 @@ function ScriptStudioPage() {
           tone,
           language,
           creativity: creativity[0]! / 100,
-          multiOption,
+          multiOption: effectiveMultiOption,
           ...(audience.trim() ? { audience: audience.trim() } : {}),
         },
       }),
@@ -467,14 +473,23 @@ function ScriptStudioPage() {
             </Field>
             <div className="flex items-center justify-between rounded-lg border border-border bg-surface-2 px-3 py-2.5 sm:col-span-2 xl:col-span-2">
               <span className="text-[12px] text-text-muted">Generate 3 options</span>
-              <Switch checked={multiOption} onCheckedChange={setMultiOption} />
+              <PaidFeatureLock enabled={canMultiOption} label="multi-option generate">
+                <Switch
+                  checked={multiOption}
+                  onCheckedChange={setMultiOption}
+                  disabled={!canMultiOption}
+                />
+              </PaidFeatureLock>
             </div>
           </div>
 
           <PlatformGuidance platform={platform} />
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle pt-5">
-            <CostHint credits={scriptGenerateCost(multiOption)} balance={creditAccount?.balance} />
+            <CostHint
+              credits={scriptGenerateCost(effectiveMultiOption)}
+              balance={planUnlimited ? undefined : creditAccount?.balance}
+            />
             {generateMutation.isPending ? (
               <GeneratingState label="Drafting script options" />
             ) : (
@@ -482,7 +497,9 @@ function ScriptStudioPage() {
                 onClick={handleGenerate}
                 disabled={
                   !topic.trim() ||
-                  (creditAccount ? creditAccount.balance < scriptGenerateCost(multiOption) : false)
+                  (creditAccount && !planUnlimited
+                    ? creditAccount.balance < scriptGenerateCost(effectiveMultiOption)
+                    : false)
                 }
               >
                 <Sparkles className="size-3.5" />
@@ -549,7 +566,8 @@ function ScriptStudioPage() {
                           // number -- shown accurately here since it's now a
                           // real deduction, not just a cosmetic estimate.
                           const totalCost = a.credits * Math.max(sections.length, 1);
-                          const insufficient = creditAccount ? creditAccount.balance < totalCost : false;
+                          const insufficient =
+                            creditAccount && !planUnlimited ? creditAccount.balance < totalCost : false;
                           return (
                             <Tooltip key={a.key}>
                               <TooltipTrigger asChild>
@@ -568,7 +586,10 @@ function ScriptStudioPage() {
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>
-                                <CostHint credits={totalCost} balance={creditAccount?.balance} />
+                                <CostHint
+                                  credits={totalCost}
+                                  balance={planUnlimited ? undefined : creditAccount?.balance}
+                                />
                               </TooltipContent>
                             </Tooltip>
                           );
@@ -583,7 +604,7 @@ function ScriptStudioPage() {
                                     variant="outline"
                                     size="sm"
                                     disabled={
-                                      creditAccount
+                                      creditAccount && !planUnlimited
                                         ? creditAccount.balance < scriptRewriteCost("tone-x") * Math.max(sections.length, 1)
                                         : false
                                     }
@@ -608,7 +629,7 @@ function ScriptStudioPage() {
                           <TooltipContent>
                             <CostHint
                               credits={scriptRewriteCost("tone-x") * Math.max(sections.length, 1)}
-                              balance={creditAccount?.balance}
+                              balance={planUnlimited ? undefined : creditAccount?.balance}
                             />
                           </TooltipContent>
                         </Tooltip>

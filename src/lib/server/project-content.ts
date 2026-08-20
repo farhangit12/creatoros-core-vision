@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
-import { randomUUID } from "node:crypto";
 import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -52,7 +51,7 @@ async function recordActivity(params: {
   detail?: string | null;
 }): Promise<void> {
   await db.insert(projectActivity).values({
-    id: randomUUID(),
+    id: crypto.randomUUID(),
     projectId: params.projectId,
     userId: params.userId,
     action: params.action,
