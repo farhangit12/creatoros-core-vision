@@ -277,7 +277,17 @@ Closes out 4 of the 5 smaller gaps the previous "Next Likely Work" section had f
   - `_app.thumbnail-studio.tsx`: "Add to planner" now also passes `coverImage: editedVariationUrl ?? selectedVariation.url` — the real generated (and possibly edited) thumbnail, not a placeholder.
   - **Verified live end-to-end, not just `tsc`:** generated a real thumbnail → "Add to planner" → Quick create dialog showed the actual image as a live preview ("Cover image attached") → Create → confirmed via direct Neon query that the real Cloudinary URL persisted → confirmed via DOM inspection that the calendar's `MiniCard` rendered that exact URL as an `<img>` in place of the platform icon.
 
-`npx tsc --noEmit` and `npm run build`: both clean throughout. State: uncommitted (`src/routes/_app.ai-usage.tsx`, `src/lib/server/ai/chat.ts`, `src/db/schema.ts`, `src/lib/server/planner.ts`, `src/routes/_app.content-planner.tsx`, `src/routes/_app.thumbnail-studio.tsx`, new `drizzle/0005_planner_cover_image.sql` + `_phase-planner-cover-apply-migration.mjs`); the migration itself is already applied and live on Neon.
+`npx tsc --noEmit` and `npm run build`: both clean throughout. Committed `2ab505a`, pushed to `origin/feature/v1-functional`.
+
+### AI Usage — "Generation history" surfaces 6, rest in "View all" (COMPLETE, verified live, committed `<pending>`, 2026-08-20)
+
+User-requested UX change to the section added above: instead of a "Load more" button that kept extending the same table, "Generation history" now shows only its most recent 6 rows inline, with a **"View all (N)"** button (appearing only once there are more than 6, `N` = the real filtered count) opening a `Sheet` with the complete list — the exact same surface/`Sheet` pattern the Library page already established (`SURFACE_LIMIT`, a `View all (N)` button, `Sheet`/`SheetContent`/`SheetHeader`/`SheetTitle`/`SheetDescription`), reused here for consistency rather than inventing a second pattern. Replaces the "Load more" button from the same-day earlier change (superseded, not layered on top).
+
+`src/routes/_app.ai-usage.tsx`: table markup extracted into a shared `GenerationTable({ rows, emptyMessage })` component, used both for the sliced surface view (`filteredGenerations.slice(0, SURFACE_LIMIT)`, `SURFACE_LIMIT = 6`) and unsliced inside the new `Sheet` — avoids duplicating the 5-column table twice. The single `listGenerations` fetch still requests up to `MAX_ROWS = 200` (the server's max) in one call; `View all` and the feature-filter tiles both operate on that same in-memory array, so switching feature filters live-updates the `Sheet`'s contents too (verified: filtered to "Image generation", the real count was 4 for this account, so `View all` correctly disappeared since 4 ≤ 6 — both the surface table and the open `Sheet` reactively updated to show all 4).
+
+**Verified live** (same throwaway account, real data — 13 real generations, including 2 genuinely `failed` rows from an earlier transient DB hiccup, not fabricated): surface correctly capped at exactly 6 rows; "View all (13)" appeared and matched the real total; opening it showed all 13 rows in a `Sheet` styled consistently with the rest of the app; toggling the "Image generation" feature filter correctly re-scoped both the surface table and the already-open `Sheet` to the real 4-row subset and hid `View all` since it was no longer needed; clearing the filter restored the 6/13 split exactly.
+
+`npx tsc --noEmit` and `npm run build`: both clean. State: uncommitted (`src/routes/_app.ai-usage.tsx`).
 
 ## Next Likely Work
 

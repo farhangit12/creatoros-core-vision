@@ -14,6 +14,7 @@ import {
 import { PageHeader, SectionLabel } from "@/components/app/primitives";
 import { StatusPill, type StateTone } from "@/components/app/studio-kit";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { getUsageSummary, listGenerations } from "@/lib/server/ai/ai-usage";
 
@@ -71,21 +72,67 @@ function formatGenerationTimestamp(value: string | Date): string {
   return `${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })} · ${time}`;
 }
 
-const PAGE_SIZE = 50;
+const SURFACE_LIMIT = 6;
 const MAX_ROWS = 200;
+
+type GenerationRow = Awaited<ReturnType<typeof listGenerations>>[number];
+
+function GenerationTable({ rows, emptyMessage }: { rows: GenerationRow[]; emptyMessage: string }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-surface">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-[13px]">
+          <thead>
+            <tr className="border-b border-border-subtle text-text-subtle">
+              <th className="px-5 py-3 font-normal">Feature</th>
+              <th className="px-5 py-3 font-normal">Status</th>
+              <th className="px-5 py-3 font-normal">Model</th>
+              <th className="px-5 py-3 font-normal">Tokens</th>
+              <th className="px-5 py-3 font-normal">Timestamp</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-subtle">
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-5 py-6 text-center text-[12px] text-text-subtle">
+                  {emptyMessage}
+                </td>
+              </tr>
+            ) : (
+              rows.map((g) => {
+                const statusMeta = STATUS_META[g.status] ?? { label: g.status, tone: "neutral" as StateTone };
+                return (
+                  <tr key={g.id}>
+                    <td className="px-5 py-3 text-foreground">{featureLabels[g.feature] ?? g.feature}</td>
+                    <td className="px-5 py-3">
+                      <StatusPill tone={statusMeta.tone}>{statusMeta.label}</StatusPill>
+                    </td>
+                    <td className="px-5 py-3 text-text-muted">{g.model}</td>
+                    <td className="px-5 py-3 font-mono text-foreground">{g.totalTokens ?? 0}</td>
+                    <td className="px-5 py-3 font-mono text-[11px] text-text-subtle">
+                      {formatGenerationTimestamp(g.createdAt)}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 function AiUsagePage() {
   const listGenerationsFn = useServerFn(listGenerations);
   const getUsageSummaryFn = useServerFn(getUsageSummary);
 
-  const [rowLimit, setRowLimit] = useState(PAGE_SIZE);
-
-  const { data: generations = [], isFetching } = useQuery({
-    queryKey: ["ai-usage-generations", rowLimit],
-    queryFn: () => listGenerationsFn({ data: { limit: rowLimit } }),
+  const { data: generations = [] } = useQuery({
+    queryKey: ["ai-usage-generations"],
+    queryFn: () => listGenerationsFn({ data: { limit: MAX_ROWS } }),
   });
 
-  const canLoadMore = generations.length === rowLimit && rowLimit < MAX_ROWS;
+  const [viewAllOpen, setViewAllOpen] = useState(false);
 
   const { data: summary } = useQuery({
     queryKey: ["ai-usage-summary"],
@@ -214,73 +261,53 @@ function AiUsagePage() {
       <section>
         <SectionLabel
           aside={
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">
-              {activeFeature ? `filtered · ${FEATURE_META[activeFeature].label}` : "per-generation log"}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-text-subtle">
+                {activeFeature ? `filtered · ${FEATURE_META[activeFeature].label}` : "per-generation log"}
+              </span>
+              {filteredGenerations.length > SURFACE_LIMIT ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-[12px] font-normal text-text-subtle hover:text-foreground"
+                  onClick={() => setViewAllOpen(true)}
+                >
+                  View all ({filteredGenerations.length})
+                </Button>
+              ) : null}
+            </div>
           }
         >
           Generation history
         </SectionLabel>
-        <div className="overflow-hidden rounded-xl border border-border bg-surface">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-[13px]">
-              <thead>
-                <tr className="border-b border-border-subtle text-text-subtle">
-                  <th className="px-5 py-3 font-normal">Feature</th>
-                  <th className="px-5 py-3 font-normal">Status</th>
-                  <th className="px-5 py-3 font-normal">Model</th>
-                  <th className="px-5 py-3 font-normal">Tokens</th>
-                  <th className="px-5 py-3 font-normal">Timestamp</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-subtle">
-                {filteredGenerations.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-5 py-6 text-center text-[12px] text-text-subtle">
-                      {generations.length === 0
-                        ? "No generations yet — try Chat, Script Studio, Image Studio or Thumbnail Studio."
-                        : `No generations for ${activeFeature ? FEATURE_META[activeFeature].label : "this feature"} yet.`}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredGenerations.map((g) => {
-                    const statusMeta = STATUS_META[g.status] ?? { label: g.status, tone: "neutral" as StateTone };
-                    return (
-                      <tr key={g.id}>
-                        <td className="px-5 py-3 text-foreground">{featureLabels[g.feature] ?? g.feature}</td>
-                        <td className="px-5 py-3">
-                          <StatusPill tone={statusMeta.tone}>{statusMeta.label}</StatusPill>
-                        </td>
-                        <td className="px-5 py-3 text-text-muted">{g.model}</td>
-                        <td className="px-5 py-3 font-mono text-foreground">{g.totalTokens ?? 0}</td>
-                        <td className="px-5 py-3 font-mono text-[11px] text-text-subtle">
-                          {formatGenerationTimestamp(g.createdAt)}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        {canLoadMore ? (
-          <div className="mt-4 flex justify-center">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setRowLimit((n) => Math.min(n + PAGE_SIZE, MAX_ROWS))}
-              disabled={isFetching}
-            >
-              {isFetching ? "Loading…" : "Load more"}
-            </Button>
-          </div>
-        ) : generations.length >= MAX_ROWS ? (
+        <GenerationTable
+          rows={filteredGenerations.slice(0, SURFACE_LIMIT)}
+          emptyMessage={
+            generations.length === 0
+              ? "No generations yet — try Chat, Script Studio, Image Studio or Thumbnail Studio."
+              : `No generations for ${activeFeature ? FEATURE_META[activeFeature].label : "this feature"} yet.`
+          }
+        />
+        {generations.length >= MAX_ROWS ? (
           <p className="mt-4 text-center text-[11px] text-text-subtle">
             Showing the most recent {MAX_ROWS} generations.
           </p>
         ) : null}
       </section>
+
+      <Sheet open={viewAllOpen} onOpenChange={setViewAllOpen}>
+        <SheetContent className="w-full overflow-y-auto sm:max-w-3xl">
+          <SheetHeader>
+            <SheetTitle>
+              {activeFeature ? `All ${FEATURE_META[activeFeature].label} generations` : "All generations"}
+            </SheetTitle>
+            <SheetDescription>Every AI generation in this view, most recent first.</SheetDescription>
+          </SheetHeader>
+          <div className="mt-6">
+            <GenerationTable rows={filteredGenerations} emptyMessage="No generations yet." />
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
