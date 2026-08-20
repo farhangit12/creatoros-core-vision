@@ -40,6 +40,17 @@ function assertRow<T>(row: T | undefined, message: string): T {
   return row;
 }
 
+const TITLE_MAX_LENGTH = 60;
+
+/** Derived from the user's own first message -- real content, not a
+ * placeholder, and costs no extra AI call/credits. */
+function deriveConversationTitle(text: string): string {
+  const cleaned = text.replace(/\s+/g, " ").trim();
+  if (!cleaned) return "New chat";
+  if (cleaned.length <= TITLE_MAX_LENGTH) return cleaned;
+  return `${cleaned.slice(0, TITLE_MAX_LENGTH).trimEnd()}…`;
+}
+
 async function loadOwnedConversation(userId: string, conversationId: string): Promise<ConversationRecord> {
   const [conversation] = await db
     .select()
@@ -240,9 +251,13 @@ export const sendChatMessage = createServerFn({ method: "POST" })
         .returning();
 
       await db.insert(aiGenerations).values(toDbGeneration(userId, result.generation));
+      const titleUpdate =
+        priorMessages.length === 0 && !conversation.title
+          ? { title: deriveConversationTitle(data.content) }
+          : {};
       await db
         .update(aiConversations)
-        .set({ updatedAt: new Date() })
+        .set({ ...titleUpdate, updatedAt: new Date() })
         .where(eq(aiConversations.id, conversation.id));
 
       return {

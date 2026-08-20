@@ -53,6 +53,7 @@ const createPlannerItemSchema = z.object({
   platform: z.enum(PLATFORM_IDS),
   projectId: z.string().min(1).nullable().optional(),
   stage: z.enum(PLANNER_STAGES).optional(),
+  coverImage: z.string().trim().url().nullable().optional(),
   day: z.number().int().min(1).max(31),
   scheduledAt: z.coerce.date(),
 });
@@ -63,6 +64,7 @@ const updatePlannerItemSchema = z.object({
   platform: z.enum(PLATFORM_IDS).optional(),
   projectId: z.string().min(1).nullable().optional(),
   stage: z.enum(PLANNER_STAGES).optional(),
+  coverImage: z.string().trim().url().nullable().optional(),
   day: z.number().int().min(1).max(31).optional(),
   scheduledAt: z.coerce.date().optional(),
 });
@@ -94,6 +96,7 @@ export const createPlannerItem = createServerFn({ method: "POST" })
         title: data.title,
         platform: data.platform,
         stage: data.stage ?? "Idea",
+        coverImage: data.coverImage ?? null,
         day: data.day,
         scheduledAt: data.scheduledAt,
       })

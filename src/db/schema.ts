@@ -120,6 +120,7 @@ export const plannerItems = pgTable("planner_items", {
   title: text("title").notNull(),
   platform: text("platform").notNull(),
   stage: text("stage").notNull().default("Idea"),
+  coverImage: text("coverImage"),
   day: integer("day").notNull(),
   scheduledAt: timestamp("scheduledAt").notNull(),
   createdAt: timestamp("createdAt").notNull().defaultNow(),

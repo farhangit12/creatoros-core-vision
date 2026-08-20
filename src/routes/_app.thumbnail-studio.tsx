@@ -874,7 +874,11 @@ function ThumbnailStudioPage() {
                     onClick: () =>
                       navigate({
                         to: "/content-planner",
-                        search: { title: topic.trim() || "Untitled thumbnail", platform: id },
+                        search: {
+                          title: topic.trim() || "Untitled thumbnail",
+                          platform: id,
+                          coverImage: editedVariationUrl ?? selectedVariation.url,
+                        },
                       }),
                   },
                 ]}

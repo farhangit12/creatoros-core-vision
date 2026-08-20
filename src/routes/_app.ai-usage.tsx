@@ -71,14 +71,21 @@ function formatGenerationTimestamp(value: string | Date): string {
   return `${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })} · ${time}`;
 }
 
+const PAGE_SIZE = 50;
+const MAX_ROWS = 200;
+
 function AiUsagePage() {
   const listGenerationsFn = useServerFn(listGenerations);
   const getUsageSummaryFn = useServerFn(getUsageSummary);
 
-  const { data: generations = [] } = useQuery({
-    queryKey: ["ai-usage-generations"],
-    queryFn: () => listGenerationsFn({ data: {} }),
+  const [rowLimit, setRowLimit] = useState(PAGE_SIZE);
+
+  const { data: generations = [], isFetching } = useQuery({
+    queryKey: ["ai-usage-generations", rowLimit],
+    queryFn: () => listGenerationsFn({ data: { limit: rowLimit } }),
   });
+
+  const canLoadMore = generations.length === rowLimit && rowLimit < MAX_ROWS;
 
   const { data: summary } = useQuery({
     queryKey: ["ai-usage-summary"],
@@ -122,7 +129,7 @@ function AiUsagePage() {
             <span className="label-eyebrow">Total generations</span>
           </div>
           <p className="mt-5 font-mono text-[36px] leading-none tracking-[-0.03em] text-foreground">
-            {generations.length.toLocaleString()}
+            {(summary?.totalGenerations ?? generations.length).toLocaleString()}
           </p>
           <p className="mt-2 text-[13px] text-text-muted">
             across Chat, Script Studio, Image Studio and Thumbnail Studio
@@ -257,6 +264,22 @@ function AiUsagePage() {
             </table>
           </div>
         </div>
+        {canLoadMore ? (
+          <div className="mt-4 flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRowLimit((n) => Math.min(n + PAGE_SIZE, MAX_ROWS))}
+              disabled={isFetching}
+            >
+              {isFetching ? "Loading…" : "Load more"}
+            </Button>
+          </div>
+        ) : generations.length >= MAX_ROWS ? (
+          <p className="mt-4 text-center text-[11px] text-text-subtle">
+            Showing the most recent {MAX_ROWS} generations.
+          </p>
+        ) : null}
       </section>
     </div>
   );

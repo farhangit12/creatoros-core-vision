@@ -23,6 +23,7 @@ import {
   MoreHorizontal,
   Plus,
   CalendarX2,
+  X,
 } from "lucide-react";
 import { PageHeader, SectionLabel, EmptyState } from "@/components/app/primitives";
 import { StatusPill, WireLine } from "@/components/app/studio-kit";
@@ -66,11 +67,12 @@ const PLATFORM_IDS = ["youtube", "instagram", "tiktok", "linkedin", "x"] as cons
 export const Route = createFileRoute("/_app/content-planner")({
   validateSearch: (
     search: Record<string, unknown>,
-  ): { title?: string; platform?: (typeof PLATFORM_IDS)[number] } => ({
+  ): { title?: string; platform?: (typeof PLATFORM_IDS)[number]; coverImage?: string } => ({
     ...(typeof search["title"] === "string" ? { title: search["title"] } : {}),
     ...(PLATFORM_IDS.includes(search["platform"] as (typeof PLATFORM_IDS)[number])
       ? { platform: search["platform"] as (typeof PLATFORM_IDS)[number] }
       : {}),
+    ...(typeof search["coverImage"] === "string" ? { coverImage: search["coverImage"] } : {}),
   }),
   head: () => ({
     meta: [
@@ -115,6 +117,7 @@ type FormValues = {
   projectId: string | null;
   stage: Stage;
   date: Date;
+  coverImage: string | null;
 };
 
 const NO_PROJECT_VALUE = "none";
@@ -154,6 +157,7 @@ function ContentItemDialog({
   const [projectId, setProjectId] = useState<string>(initial?.projectId ?? NO_PROJECT_VALUE);
   const [stage, setStage] = useState<Stage>(initial?.stage ?? "Idea");
   const [date, setDate] = useState<Date>(initial?.date ?? defaultDate);
+  const [coverImage, setCoverImage] = useState<string | null>(initial?.coverImage ?? null);
 
   function reset() {
     setTitle(initial?.title ?? "");
@@ -161,6 +165,7 @@ function ContentItemDialog({
     setProjectId(initial?.projectId ?? NO_PROJECT_VALUE);
     setStage(initial?.stage ?? "Idea");
     setDate(initial?.date ?? defaultDate);
+    setCoverImage(initial?.coverImage ?? null);
   }
 
   return (
@@ -180,6 +185,24 @@ function ContentItemDialog({
             <Label className="text-[12px] text-text-muted">Title</Label>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Behind the scenes reel" />
           </div>
+          {coverImage ? (
+            <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-2/60 p-2.5">
+              <div className="size-14 shrink-0 overflow-hidden rounded-md bg-surface-3">
+                <img src={coverImage} alt="" className="size-full object-cover" />
+              </div>
+              <p className="flex-1 text-[12px] text-text-muted">Cover image attached</p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                onClick={() => setCoverImage(null)}
+                aria-label="Remove cover image"
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="text-[12px] text-text-muted">Platform</Label>
@@ -240,6 +263,7 @@ function ContentItemDialog({
                 projectId: projectId === NO_PROJECT_VALUE ? null : projectId,
                 stage,
                 date,
+                coverImage,
               })
             }
           >
@@ -318,7 +342,11 @@ function MiniCard({
     >
       <div className="flex items-center justify-between gap-1">
         <div className="flex min-w-0 items-center gap-1.5">
-          <PlatformIcon id={card.platform as PlatformId} />
+          {card.coverImage ? (
+            <img src={card.coverImage} alt="" className="size-4 shrink-0 rounded object-cover" />
+          ) : (
+            <PlatformIcon id={card.platform as PlatformId} />
+          )}
           <span className="truncate text-[11px] text-foreground">{card.title}</span>
         </div>
         <CardActionsMenu
@@ -377,6 +405,7 @@ function ContentPlannerPage() {
           platform: values.platform,
           projectId: values.projectId,
           stage: values.stage,
+          coverImage: values.coverImage,
           day: values.date.getDate(),
           scheduledAt: values.date,
         },
@@ -406,6 +435,7 @@ function ContentPlannerPage() {
           platform: values.platform,
           projectId: values.projectId,
           stage: values.stage,
+          coverImage: values.coverImage,
           day: values.date.getDate(),
           scheduledAt: values.date,
         },
@@ -426,6 +456,7 @@ function ContentPlannerPage() {
           platform: card.platform as PlatformId,
           projectId: card.projectId,
           stage: card.stage as Stage,
+          coverImage: card.coverImage,
           day: card.day,
           scheduledAt: card.scheduledAt,
         },
@@ -453,7 +484,7 @@ function ContentPlannerPage() {
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
   const [dialogState, setDialogState] = useState<
-    | { mode: "create"; prefill?: { title: string; platform: PlatformId } }
+    | { mode: "create"; prefill?: { title: string; platform: PlatformId; coverImage: string | null } }
     | { mode: "edit"; card: PlannerItemRecord }
     | null
   >(null);
@@ -463,11 +494,15 @@ function ContentPlannerPage() {
     if (!search.title) return;
     setDialogState({
       mode: "create",
-      prefill: { title: search.title, platform: search.platform ?? "youtube" },
+      prefill: {
+        title: search.title,
+        platform: search.platform ?? "youtube",
+        coverImage: search.coverImage ?? null,
+      },
     });
     void navigate({ to: "/content-planner", search: {}, replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search.title, search.platform]);
+  }, [search.title, search.platform, search.coverImage]);
 
   function goToPrevious() {
     setViewDate((d) => (view === "Month" ? addMonths(d, -1) : view === "Week" ? addWeeks(d, -1) : addDays(d, -1)));
@@ -559,6 +594,7 @@ function ContentPlannerPage() {
           projectId: dialogState.card.projectId,
           stage: dialogState.card.stage as Stage,
           date: new Date(dialogState.card.scheduledAt),
+          coverImage: dialogState.card.coverImage,
         }
       : dialogState?.mode === "create"
         ? dialogState.prefill
@@ -784,7 +820,11 @@ function ContentPlannerPage() {
                   const projectName = c.projectId ? (projectsById.get(c.projectId) ?? "Unknown project") : "No project";
                   return (
                     <div key={c.id} className="flex items-center gap-3 rounded-lg border border-border-subtle bg-surface-2 px-3 py-2.5">
-                      <PlatformIcon id={c.platform as PlatformId} className="size-4" />
+                      {c.coverImage ? (
+                        <img src={c.coverImage} alt="" className="size-9 shrink-0 rounded-md object-cover" />
+                      ) : (
+                        <PlatformIcon id={c.platform as PlatformId} className="size-4" />
+                      )}
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[13px] text-foreground">{c.title}</p>
                         <p className="text-[11px] text-text-subtle">{projectName}</p>
