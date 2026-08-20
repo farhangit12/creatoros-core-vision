@@ -1,12 +1,15 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
+import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { sendChangeEmailVerification, sendPasswordResetEmail } from "@/lib/server/email";
 import { deleteFromCloudinary } from "@/lib/server/files-storage";
 import { initCreditAccountForNewUser } from "@/lib/server/credits";
+import { polarClient } from "@/lib/server/polar-client";
+import { syncPolarSubscriptionState } from "@/lib/server/polar-sync";
 
 /**
  * Best-effort cleanup of the user's uploaded files on Cloudinary before the
@@ -99,5 +102,44 @@ export const auth = betterAuth({
   },
   secret: process.env["BETTER_AUTH_SECRET"],
   baseURL: process.env["BETTER_AUTH_URL"],
-  plugins: [tanstackStartCookies()],
+  plugins: [
+    tanstackStartCookies(),
+    polar({
+      client: polarClient,
+      createCustomerOnSignUp: true,
+      use: [
+        checkout({
+          products: [
+            { productId: process.env["POLAR_PRO_PRODUCT_ID"] as string, slug: "pro" },
+            { productId: process.env["POLAR_SCALE_PRODUCT_ID"] as string, slug: "scale" },
+          ],
+          successUrl: "/billing?checkout=success",
+        }),
+        portal(),
+        // Only wired once a webhook is actually registered in Polar's
+        // dashboard and POLAR_WEBHOOK_SECRET is set -- webhooks() requires a
+        // real secret string, and there's nothing to receive from Polar
+        // until an endpoint is registered anyway, so omit rather than risk
+        // passing an empty/undefined secret.
+        ...(process.env["POLAR_WEBHOOK_SECRET"]
+          ? [
+              webhooks({
+                secret: process.env["POLAR_WEBHOOK_SECRET"],
+                onCustomerStateChanged: async (payload) => {
+                  if (payload.data.externalId) {
+                    await syncPolarSubscriptionState(payload.data.externalId);
+                  }
+                },
+                onOrderPaid: async (payload) => {
+                  const externalId = payload.data.customer.externalId;
+                  if (externalId) {
+                    await syncPolarSubscriptionState(externalId);
+                  }
+                },
+              }),
+            ]
+          : []),
+      ],
+    }),
+  ],
 });

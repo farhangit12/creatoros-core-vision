@@ -68,7 +68,6 @@ import { hasFeature, maxImageBatch } from "@/lib/plan-features";
 import { PaidFeatureLock } from "@/components/app/paid-feature-gate";
 import { useSession } from "@/lib/auth-client";
 import { platforms } from "@/lib/creator-data";
-import { useDraftAutosave } from "@/lib/local-draft-storage";
 
 const SETTINGS_QUERY_KEY = ["user-settings"] as const;
 
@@ -112,19 +111,6 @@ const styles = ["Photoreal", "Illustration", "3D render", "Editorial", "Graphic"
 const counts = [1, 2, 4] as const;
 
 type Img = { id: string; recommended: boolean; url: string };
-
-interface ImageStudioDraft {
-  prompt: string;
-  negativePrompt: string;
-  overlayText: string;
-  platformId: string;
-  useCase: string;
-  ratio: string;
-  style: string;
-  count: (typeof counts)[number];
-  referenceImageUrl: string | null;
-  referencePreview: string | null;
-}
 
 function aspectClass(ratio: string) {
   if (ratio === "9:16") return "aspect-[9/16]";
@@ -293,36 +279,6 @@ function ImageStudioPage() {
     void navigate({ to: "/image-studio", search: {}, replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search.reedit]);
-
-  useDraftAutosave<ImageStudioDraft>({
-    userId: session?.user?.id,
-    feature: "image-studio",
-    enabled: settings?.autosaveDrafts ?? true,
-    value: {
-      prompt,
-      negativePrompt,
-      overlayText,
-      platformId: id,
-      useCase,
-      ratio,
-      style,
-      count,
-      referenceImageUrl,
-      referencePreview,
-    },
-    onRestore: (d) => {
-      setPrompt(d.prompt ?? "");
-      setNegativePrompt(d.negativePrompt ?? "");
-      setOverlayText(d.overlayText ?? "");
-      if (d.platformId) setId(d.platformId as typeof id);
-      if (d.useCase) setUseCase(d.useCase);
-      if (d.ratio) setRatio(d.ratio);
-      if (d.style) setStyle(d.style);
-      if (d.count) setCount(d.count);
-      if (d.referenceImageUrl) setReferenceImageUrl(d.referenceImageUrl);
-      if (d.referencePreview) setReferencePreview(d.referencePreview);
-    },
-  });
 
   const generateImageFn = useServerFn(generateImageAction);
   const createVariationFn = useServerFn(createImageVariationAction);

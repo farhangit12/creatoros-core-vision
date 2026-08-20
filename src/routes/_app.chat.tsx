@@ -82,7 +82,6 @@ import { CREDIT_COSTS, isUnlimitedPlan, type PlanId } from "@/lib/credits";
 import { hasFeature } from "@/lib/plan-features";
 import { PaidFeatureLock } from "@/components/app/paid-feature-gate";
 import { useSession } from "@/lib/auth-client";
-import { useDraftAutosave } from "@/lib/local-draft-storage";
 
 const SETTINGS_QUERY_KEY = ["user-settings"] as const;
 
@@ -248,16 +247,6 @@ function ChatPageImpl() {
     void navigate({ to: "/chat", search: {}, replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeSearch.conversationId]);
-
-  const { clearDraft } = useDraftAutosave<{ text: string }>({
-    userId: session?.user?.id,
-    feature: "chat",
-    enabled: settings?.autosaveDrafts ?? true,
-    value: { text: draft },
-    onRestore: (d) => {
-      if (d.text) setDraft(d.text);
-    },
-  });
 
   const [renameTarget, setRenameTarget] = useState<ConversationRecord | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -426,7 +415,6 @@ function ChatPageImpl() {
     ]);
     setVisuallyStopped(false);
     setDraft("");
-    clearDraft();
     setPendingAttachments([]);
     sendMutation.mutate({
       content,

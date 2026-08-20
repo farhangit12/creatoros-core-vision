@@ -57,7 +57,6 @@ import { hasFeature, maxThumbnailBatch } from "@/lib/plan-features";
 import { PaidFeatureLock } from "@/components/app/paid-feature-gate";
 import { useSession } from "@/lib/auth-client";
 import { platforms } from "@/lib/creator-data";
-import { useDraftAutosave } from "@/lib/local-draft-storage";
 
 const SETTINGS_QUERY_KEY = ["user-settings"] as const;
 
@@ -109,19 +108,6 @@ type Variation = {
   rationale: string;
   url: string;
 };
-
-interface ThumbnailStudioDraft {
-  topic: string;
-  platformId: string;
-  ratio: string;
-  style: string;
-  count: (typeof counts)[number];
-  overlay: string;
-  fontSize: number;
-  position: Position;
-  referenceImageUrl: string | null;
-  referencePreview: string | null;
-}
 
 function aspectClass(ratio: string) {
   if (ratio === "9:16") return "aspect-[9/16]";
@@ -310,36 +296,6 @@ function ThumbnailStudioPage() {
     void navigate({ to: "/thumbnail-studio", search: {}, replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search.reedit]);
-
-  useDraftAutosave<ThumbnailStudioDraft>({
-    userId: session?.user?.id,
-    feature: "thumbnail-studio",
-    enabled: settings?.autosaveDrafts ?? true,
-    value: {
-      topic,
-      platformId: id,
-      ratio,
-      style,
-      count,
-      overlay,
-      fontSize,
-      position,
-      referenceImageUrl,
-      referencePreview,
-    },
-    onRestore: (d) => {
-      setTopic(d.topic ?? "");
-      if (d.platformId) setId(d.platformId as typeof id);
-      if (d.ratio) setRatio(d.ratio);
-      if (d.style) setStyle(d.style);
-      if (d.count) setCount(d.count);
-      if (d.overlay) setOverlay(d.overlay);
-      if (d.fontSize) setFontSize(d.fontSize);
-      if (d.position) setPosition(d.position);
-      if (d.referenceImageUrl) setReferenceImageUrl(d.referenceImageUrl);
-      if (d.referencePreview) setReferencePreview(d.referencePreview);
-    },
-  });
 
   const generateThumbnailFn = useServerFn(generateThumbnailAction);
   const uploadReferenceImageFn = useServerFn(uploadReferenceImageAction);

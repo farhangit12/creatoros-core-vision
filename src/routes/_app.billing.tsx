@@ -1,15 +1,20 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Check, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader, SectionLabel } from "@/components/app/primitives";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { getCreditBalance } from "@/lib/server/credits";
+import { getCreditBalance, syncPolarStateAction } from "@/lib/server/credits";
+import { authClient } from "@/lib/auth-client";
 import { PLANS, formatCredits, isUnlimitedPlan, type PlanId } from "@/lib/credits";
 
 export const Route = createFileRoute("/_app/billing")({
+  validateSearch: (search: Record<string, unknown>): { checkout?: string } => ({
+    ...(typeof search["checkout"] === "string" ? { checkout: search["checkout"] } : {}),
+  }),
   head: () => ({
     meta: [
       { title: "Billing — CreatorOS AI" },
@@ -105,14 +110,49 @@ function notifyUnavailable() {
   });
 }
 
+async function startCheckout(slug: "pro" | "scale") {
+  try {
+    await authClient.checkout({ slug });
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "Couldn't start checkout. Try again.");
+  }
+}
+
+async function openBillingPortal() {
+  try {
+    await authClient.customer.portal();
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "Couldn't open billing portal. Try again.");
+  }
+}
+
 function BillingPage() {
+  const search = Route.useSearch();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const getCreditBalanceFn = useServerFn(getCreditBalance);
+  const syncPolarStateFn = useServerFn(syncPolarStateAction);
   const { data: account } = useQuery({
     queryKey: ["credit-balance"],
     queryFn: () => getCreditBalanceFn(),
   });
   const currentPlan = account ? (PLANS[account.planId as keyof typeof PLANS] ?? PLANS.free) : undefined;
   const currentPlanUnlimited = account ? isUnlimitedPlan(account.planId as PlanId) : false;
+  const cancelsAtPeriodEnd = account?.subscriptionStatus === "canceled";
+
+  useEffect(() => {
+    if (search.checkout !== "success") return;
+    syncPolarStateFn()
+      .then(() => {
+        void queryClient.invalidateQueries({ queryKey: ["credit-balance"] });
+        toast.success("Plan updated!");
+      })
+      .catch(() => {
+        toast.error("Payment received, but we couldn't refresh your plan yet — reload in a moment.");
+      });
+    void navigate({ to: "/billing", search: {}, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.checkout]);
 
   return (
     <div className="space-y-12">
@@ -134,7 +174,9 @@ function BillingPage() {
                   : `${account.balance.toLocaleString()} of ${currentPlan.monthlyCredits.toLocaleString()} credits remaining`}
               </p>
               <p className="mt-2 text-[13px] text-text-subtle">
-                Renews {new Date(account.renewsAt).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
+                {cancelsAtPeriodEnd
+                  ? `Cancels ${new Date(account.renewsAt).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })} — reverts to Free`
+                  : `Renews ${new Date(account.renewsAt).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}`}
               </p>
             </>
           ) : (
@@ -192,9 +234,16 @@ function BillingPage() {
                   size="sm"
                   variant={p.recommended ? "default" : "outline"}
                   className={cn("w-full", p.recommended && "bg-accent-brand hover:bg-accent-hover")}
-                  onClick={notifyUnavailable}
+                  disabled={account?.planId === p.id}
+                  onClick={
+                    p.id === "pro"
+                      ? () => void startCheckout("pro")
+                      : p.id === "scale"
+                        ? () => void startCheckout("scale")
+                        : notifyUnavailable
+                  }
                 >
-                  {p.cta}
+                  {account?.planId === p.id ? "Current plan" : p.cta}
                 </Button>
               </div>
             </div>
@@ -231,26 +280,28 @@ function BillingPage() {
       </section>
 
       <section>
-        <SectionLabel>Payment method</SectionLabel>
-        <div className="flex items-center justify-between gap-4 rounded-xl border border-dashed border-border bg-surface p-5">
-          <div className="flex items-center gap-3">
-            <CreditCard className="size-5 text-text-subtle" />
-            <p className="text-[14px] text-foreground">No payment method on file</p>
+        <SectionLabel>Billing & payment</SectionLabel>
+        {account && account.planId !== "free" ? (
+          <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-surface p-5">
+            <div className="flex items-center gap-3">
+              <CreditCard className="size-5 text-text-subtle" />
+              <div>
+                <p className="text-[14px] text-foreground">Payment method, invoices & cancellation</p>
+                <p className="text-[13px] text-text-subtle">Manage everything through Polar's billing portal.</p>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" onClick={openBillingPortal}>
+              Manage billing
+            </Button>
           </div>
-          <Button size="sm" variant="outline" onClick={notifyUnavailable}>
-            Add payment method
-          </Button>
-        </div>
-      </section>
-
-      <section>
-        <SectionLabel>Invoice history</SectionLabel>
-        <div className="rounded-xl border border-dashed border-border bg-surface px-5 py-10 text-center">
-          <p className="text-[14px] text-foreground">No invoices yet</p>
-          <p className="mt-1 text-[13px] text-text-subtle">
-            Invoices will appear here once you're on a paid plan.
-          </p>
-        </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-border bg-surface px-5 py-10 text-center">
+            <p className="text-[14px] text-foreground">No payment method on file</p>
+            <p className="mt-1 text-[13px] text-text-subtle">
+              Payment method, invoices and cancellation are managed here once you're on a paid plan.
+            </p>
+          </div>
+        )}
       </section>
     </div>
   );

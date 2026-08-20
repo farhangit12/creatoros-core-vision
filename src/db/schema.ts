@@ -296,6 +296,12 @@ export const userCredits = pgTable("user_credits", {
   balance: integer("balance").notNull().default(0),
   renewsAt: timestamp("renewsAt").notNull(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  // Polar.sh subscription linkage -- polarCustomerId is cached for
+  // convenience/support lookups only; Polar's own Customer State (looked up
+  // live by externalId = user.id) remains the real source of truth.
+  polarCustomerId: text("polarCustomerId"),
+  polarSubscriptionId: text("polarSubscriptionId"),
+  subscriptionStatus: text("subscriptionStatus"),
 });
 
 export const creditLedgerReasonValues = [
@@ -303,6 +309,8 @@ export const creditLedgerReasonValues = [
   "monthly_reset",
   "ai_generation",
   "admin_adjustment",
+  "subscription_granted",
+  "plan_downgraded",
 ] as const;
 
 export const creditLedger = pgTable(

@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import { Check, Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { platforms, type Platform, type PlatformId } from "@/lib/creator-data";
 
 /** A bordered panel used across studio surfaces. */
@@ -104,23 +105,27 @@ export function PlatformPicker({
   return (
     <div className={cn("grid gap-1.5", compact ? "grid-cols-5" : "grid-cols-5")}>
       {platforms.map((p) => (
-        <button
-          key={p.id}
-          type="button"
-          onClick={() => onChange(p.id)}
-          aria-pressed={value === p.id}
-          className={cn(
-            "flex h-[52px] flex-col items-center justify-center gap-1 rounded-lg border text-[10px] transition-colors duration-150",
-            value === p.id
-              ? "border-accent-brand/40 bg-accent-tint text-foreground"
-              : "border-border bg-surface-2 text-text-subtle hover:text-foreground",
-          )}
-        >
-          <p.icon
-            className={cn("size-4", value === p.id && "text-accent-brand")}
-          />
-          {p.label}
-        </button>
+        <Tooltip key={p.id}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => onChange(p.id)}
+              aria-pressed={value === p.id}
+              aria-label={p.label}
+              className={cn(
+                "flex h-11 items-center justify-center rounded-lg border transition-colors duration-150",
+                value === p.id
+                  ? "border-accent-brand/40 bg-accent-tint text-foreground"
+                  : "border-border bg-surface-2 text-text-subtle hover:text-foreground",
+              )}
+            >
+              <p.icon
+                className={cn("size-4.5", value === p.id && "text-accent-brand")}
+              />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{p.label}</TooltipContent>
+        </Tooltip>
       ))}
     </div>
   );

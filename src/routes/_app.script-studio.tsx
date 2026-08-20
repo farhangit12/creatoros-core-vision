@@ -61,7 +61,6 @@ import { hasFeature } from "@/lib/plan-features";
 import { PaidFeatureLock } from "@/components/app/paid-feature-gate";
 import { useSession } from "@/lib/auth-client";
 import { platforms } from "@/lib/creator-data";
-import { useDraftAutosave } from "@/lib/local-draft-storage";
 
 const SETTINGS_QUERY_KEY = ["user-settings"] as const;
 import type { ScriptOption } from "@/lib/ai/types";
@@ -82,23 +81,6 @@ export const Route = createFileRoute("/_app/script-studio")({
 });
 
 type Section = { id: string; label: string; text: string };
-
-interface ScriptStudioDraft {
-  title: string;
-  topic: string;
-  platformId: string;
-  contentType: string;
-  duration: string;
-  audience: string;
-  tone: string;
-  language: string;
-  creativity: number[];
-  multiOption: boolean;
-  scriptOptions: ScriptOption[];
-  hasGenerated: boolean;
-  selectedOption: string | null;
-  sections: Section[];
-}
 
 const aiActions = [
   { key: "rewrite", label: "Rewrite", icon: RefreshCw, credits: scriptRewriteCost("rewrite") },
@@ -201,44 +183,6 @@ function ScriptStudioPage() {
     void navigate({ to: "/script-studio", search: {}, replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search.reedit]);
-
-  useDraftAutosave<ScriptStudioDraft>({
-    userId: session?.user?.id,
-    feature: "script-studio",
-    enabled: settings?.autosaveDrafts ?? true,
-    value: {
-      title,
-      topic,
-      platformId,
-      contentType,
-      duration,
-      audience,
-      tone,
-      language,
-      creativity,
-      multiOption,
-      scriptOptions,
-      hasGenerated,
-      selectedOption,
-      sections,
-    },
-    onRestore: (d) => {
-      setTitle(d.title ?? "");
-      setTopic(d.topic ?? "");
-      if (d.platformId) setPlatformId(d.platformId as typeof platformId);
-      if (d.contentType) setContentType(d.contentType);
-      if (d.duration) setDuration(d.duration);
-      setAudience(d.audience ?? "");
-      if (d.tone) setTone(d.tone);
-      if (d.language) setLanguage(d.language);
-      if (d.creativity) setCreativity(d.creativity);
-      if (typeof d.multiOption === "boolean") setMultiOption(d.multiOption);
-      if (d.scriptOptions) setScriptOptions(d.scriptOptions);
-      if (typeof d.hasGenerated === "boolean") setHasGenerated(d.hasGenerated);
-      if (d.selectedOption !== undefined) setSelectedOption(d.selectedOption);
-      if (d.sections) setSections(d.sections);
-    },
-  });
 
   const handlePlatformChange = (id: typeof platformId) => {
     setPlatformId(id);

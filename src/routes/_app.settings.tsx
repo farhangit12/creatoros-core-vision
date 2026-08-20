@@ -348,7 +348,6 @@ function SettingsPage() {
   const [notifyCreditWarnings, setNotifyCreditWarnings] = useState(true);
   const [notifyPlannerReminders, setNotifyPlannerReminders] = useState(true);
   const [defaultAiTone, setDefaultAiTone] = useState<string>(tones[0]!);
-  const [autosaveDrafts, setAutosaveDrafts] = useState(true);
   const [keyboardFirstMode, setKeyboardFirstMode] = useState(true);
   const [theme, setTheme] = useState<ThemeSetting>("dark");
 
@@ -360,7 +359,6 @@ function SettingsPage() {
       setNotifyCreditWarnings(settings.notifyCreditWarnings);
       setNotifyPlannerReminders(settings.notifyPlannerReminders);
       setDefaultAiTone(tones.includes(settings.defaultAiTone) ? settings.defaultAiTone : tones[0]!);
-      setAutosaveDrafts(settings.autosaveDrafts);
       setKeyboardFirstMode(settings.keyboardFirstMode);
       const serverTheme = settings.theme as ThemeSetting;
       setTheme(serverTheme);
@@ -390,7 +388,6 @@ function SettingsPage() {
             notifyCreditWarnings,
             notifyPlannerReminders,
             defaultAiTone,
-            autosaveDrafts,
             keyboardFirstMode,
             theme,
           },
@@ -569,11 +566,6 @@ function SettingsPage() {
                         </SelectContent>
                       </Select>
                     }
-                  />
-                  <Row
-                    title="Autosave drafts"
-                    description="Keep an on-device copy while you write."
-                    control={<Switch checked={autosaveDrafts} onCheckedChange={setAutosaveDrafts} />}
                   />
                   <Row
                     title="Keyboard-first mode"

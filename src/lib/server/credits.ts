@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { auth } from "@/lib/auth";
 import { aiGenerations, creditLedger, userCredits } from "@/db/schema";
 import { PLANS, type PlanId } from "@/lib/credits";
+import { syncPolarSubscriptionState } from "@/lib/server/polar-sync";
 
 export type CreditAccountRecord = typeof userCredits.$inferSelect;
 
@@ -99,6 +100,13 @@ async function applyMonthlyResetIfDue(account: CreditAccountRecord): Promise<Cre
   if (new Date() < new Date(account.renewsAt)) {
     return account;
   }
+  // Polar-subscribed accounts renew via real payments, synced by
+  // syncPolarSubscriptionState (webhook or checkout-return page) -- never
+  // via this lazy time-based guess. Free-tier accounts (no subscription)
+  // are unaffected and keep resetting exactly as before.
+  if (account.polarSubscriptionId) {
+    return account;
+  }
   const plan = PLANS[account.planId as PlanId] ?? PLANS.free;
   const [updated] = await db
     .update(userCredits)
@@ -125,6 +133,16 @@ export async function getOrInitCreditAccount(userId: string): Promise<CreditAcco
 
 export const getCreditBalance = createServerFn({ method: "GET" }).handler(async () => {
   const userId = await requireUserId();
+  return getOrInitCreditAccount(userId);
+});
+
+/** Called from the Billing page on `?checkout=success` so the UI reflects a
+ * new plan immediately instead of waiting on webhook lag -- the webhook
+ * (auth.ts) calls syncPolarSubscriptionState directly for the same reason
+ * on the real event path; this is just the client-triggered fallback. */
+export const syncPolarStateAction = createServerFn({ method: "POST" }).handler(async () => {
+  const userId = await requireUserId();
+  await syncPolarSubscriptionState(userId);
   return getOrInitCreditAccount(userId);
 });
 
