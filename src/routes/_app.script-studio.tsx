@@ -382,101 +382,97 @@ function ScriptStudioPage() {
         placeholder="Untitled script"
       />
 
-      <div className="grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
-        {/* LEFT INPUT PANEL */}
-        <div className="space-y-6">
-          <Panel title="Script inputs">
-            <div className="space-y-5">
-              <Field label="Topic / idea">
-                <Textarea
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  placeholder="What is this script about?"
-                  className="min-h-[84px] bg-surface-2 text-[13px]"
-                />
-              </Field>
-              <Field label="Platform">
-                <PlatformPicker value={platformId} onChange={handlePlatformChange} />
-              </Field>
-              <PlatformGuidance platform={platform} />
-              <Field label="Content type">
-                <Select value={contentType} onValueChange={setContentType}>
-                  <SelectTrigger className="h-9 bg-surface-2 text-[13px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {platform.contentTypes.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Target duration">
-                <ChipGroup options={platform.durations} value={duration} onChange={setDuration} />
-              </Field>
-              <Field label="Audience">
-                <Input
-                  value={audience}
-                  onChange={(e) => setAudience(e.target.value)}
-                  placeholder="e.g. early-stage creators"
-                  className="h-9 bg-surface-2 text-[13px]"
-                />
-              </Field>
-              <Field label="Tone">
-                <Select value={tone} onValueChange={setTone}>
-                  <SelectTrigger className="h-9 bg-surface-2 text-[13px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {tones.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {t}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Language">
-                <Select value={language} onValueChange={setLanguage}>
-                  <SelectTrigger className="h-9 bg-surface-2 text-[13px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {languages.map((l) => (
-                      <SelectItem key={l} value={l}>
-                        {l}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label={`Creativity — ${creativity[0]}%`}>
-                <Slider value={creativity} onValueChange={setCreativity} max={100} step={5} />
-              </Field>
-
-              <div className="flex items-center justify-between rounded-lg border border-border bg-surface-2 px-3 py-2.5">
-                <span className="text-[12px] text-text-muted">Generate 3 options</span>
-                <Switch checked={multiOption} onCheckedChange={setMultiOption} />
-              </div>
-
-              {generateMutation.isPending ? (
-                <GeneratingState label="Drafting script options" />
-              ) : (
-                <Button className="w-full" onClick={handleGenerate} disabled={!topic.trim()}>
-                  <Sparkles className="size-3.5" />
-                  Generate
-                </Button>
-              )}
-              <div className="flex justify-end">
-                <CostHint credits={multiOption ? 18 : 7} />
-              </div>
+      <div className="space-y-6">
+        <Panel title="Script inputs" bodyClassName="space-y-6">
+          <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2 xl:grid-cols-4">
+            <Field label="Topic / idea" className="sm:col-span-2">
+              <Textarea
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="What is this script about?"
+                className="min-h-[84px] bg-surface-2 text-[13px]"
+              />
+            </Field>
+            <Field label="Platform">
+              <PlatformPicker value={platformId} onChange={handlePlatformChange} />
+            </Field>
+            <Field label="Audience">
+              <Input
+                value={audience}
+                onChange={(e) => setAudience(e.target.value)}
+                placeholder="e.g. early-stage creators"
+                className="h-9 bg-surface-2 text-[13px]"
+              />
+            </Field>
+            <Field label="Content type">
+              <Select value={contentType} onValueChange={setContentType}>
+                <SelectTrigger className="h-9 bg-surface-2 text-[13px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {platform.contentTypes.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Tone">
+              <Select value={tone} onValueChange={setTone}>
+                <SelectTrigger className="h-9 bg-surface-2 text-[13px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {tones.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Language">
+              <Select value={language} onValueChange={setLanguage}>
+                <SelectTrigger className="h-9 bg-surface-2 text-[13px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {languages.map((l) => (
+                    <SelectItem key={l} value={l}>
+                      {l}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label={`Creativity — ${creativity[0]}%`}>
+              <Slider value={creativity} onValueChange={setCreativity} max={100} step={5} />
+            </Field>
+            <Field label="Target duration" className="sm:col-span-2 xl:col-span-2">
+              <ChipGroup options={platform.durations} value={duration} onChange={setDuration} />
+            </Field>
+            <div className="flex items-center justify-between rounded-lg border border-border bg-surface-2 px-3 py-2.5 sm:col-span-2 xl:col-span-2">
+              <span className="text-[12px] text-text-muted">Generate 3 options</span>
+              <Switch checked={multiOption} onCheckedChange={setMultiOption} />
             </div>
-          </Panel>
-        </div>
+          </div>
 
-        {/* MAIN COLUMN */}
+          <PlatformGuidance platform={platform} />
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle pt-5">
+            <CostHint credits={multiOption ? 18 : 7} />
+            {generateMutation.isPending ? (
+              <GeneratingState label="Drafting script options" />
+            ) : (
+              <Button onClick={handleGenerate} disabled={!topic.trim()}>
+                <Sparkles className="size-3.5" />
+                Generate
+              </Button>
+            )}
+          </div>
+        </Panel>
+
         <div className="space-y-6">
           {!hasGenerated && !generateMutation.isPending ? (
             <EmptyState
@@ -521,9 +517,67 @@ function ScriptStudioPage() {
               </section>
 
               {selectedOption ? (
-                <div className="grid items-start gap-6 2xl:grid-cols-[minmax(0,1fr)_220px]">
+                <div className="space-y-6">
+                  {/* AI ACTIONS TOOLBAR */}
+                  <Panel title="AI actions" bodyClassName="p-3">
+                    <TooltipProvider delayDuration={200}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {aiActions.map((a) => (
+                          <Tooltip key={a.key}>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => runAction(a.key)}
+                                disabled={processingAction === a.key}
+                              >
+                                {processingAction === a.key ? (
+                                  <RefreshCw className="size-3.5 animate-spin" />
+                                ) : (
+                                  <a.icon className="size-3.5" />
+                                )}
+                                {a.label}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <CostHint credits={a.credits} />
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div>
+                              <DropdownMenu open={tonePickerOpen} onOpenChange={setTonePickerOpen}>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="outline" size="sm">
+                                    <Rows3 className="size-3.5" />
+                                    Change tone
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="start">
+                                  {tones.map((t) => (
+                                    <DropdownMenuItem
+                                      key={t}
+                                      onClick={() => runAction(`tone-${t}`)}
+                                    >
+                                      {t}
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <CostHint credits={3} />
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </TooltipProvider>
+                  </Panel>
+
                   <Panel title="Editor" bodyClassName="p-5">
-                    <div className="space-y-4">
+                    <div className="grid gap-4 lg:grid-cols-2">
                       {sections.map((s) => (
                         <div
                           key={s.id}
@@ -564,65 +618,6 @@ function ScriptStudioPage() {
                       <span>{stats.chars} characters</span>
                       <span>~{stats.minutes} min estimated</span>
                     </div>
-                  </Panel>
-
-                  {/* AI ACTIONS RAIL */}
-                  <Panel title="AI actions" bodyClassName="p-3">
-                    <TooltipProvider delayDuration={200}>
-                      <div className="space-y-1.5">
-                        {aiActions.map((a) => (
-                          <Tooltip key={a.key}>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="w-full justify-start"
-                                onClick={() => runAction(a.key)}
-                                disabled={processingAction === a.key}
-                              >
-                                {processingAction === a.key ? (
-                                  <RefreshCw className="size-3.5 animate-spin" />
-                                ) : (
-                                  <a.icon className="size-3.5" />
-                                )}
-                                {a.label}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <CostHint credits={a.credits} />
-                            </TooltipContent>
-                          </Tooltip>
-                        ))}
-
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div>
-                              <DropdownMenu open={tonePickerOpen} onOpenChange={setTonePickerOpen}>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="outline" size="sm" className="w-full justify-start">
-                                    <Rows3 className="size-3.5" />
-                                    Change tone
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="start">
-                                  {tones.map((t) => (
-                                    <DropdownMenuItem
-                                      key={t}
-                                      onClick={() => runAction(`tone-${t}`)}
-                                    >
-                                      {t}
-                                    </DropdownMenuItem>
-                                  ))}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <CostHint credits={3} />
-                          </TooltipContent>
-                        </Tooltip>
-                      </div>
-                    </TooltipProvider>
                   </Panel>
                 </div>
               ) : null}

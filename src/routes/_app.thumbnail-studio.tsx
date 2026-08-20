@@ -17,6 +17,7 @@ import {
   Columns2,
   X,
   Loader2,
+  Expand,
 } from "lucide-react";
 import { PageHeader, SectionLabel } from "@/components/app/primitives";
 import {
@@ -47,6 +48,7 @@ import { cn } from "@/lib/utils";
 import { generateThumbnailAction } from "@/lib/server/ai/thumbnail-studio";
 import { uploadReferenceImageAction } from "@/lib/server/ai/image-studio";
 import { applyImageEdits } from "@/lib/image-edit-transforms";
+import { ImageLightbox } from "@/components/app/image-lightbox";
 import { getGeneration } from "@/lib/server/ai/history";
 import { getUserSettings } from "@/lib/server/settings";
 import { useSession } from "@/lib/auth-client";
@@ -69,8 +71,9 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 /** Same Cloudinary "force download" + format/resize transform pattern used
  * by Image Studio's export -- no new backend needed. */
-function toExportUrl(url: string, format: string): string {
-  return url.replace("/upload/", `/upload/f_${format},fl_attachment/`);
+function toExportUrl(url: string, format: string, size?: { width: number; height: number } | null): string {
+  const dims = size ? `,w_${size.width},h_${size.height},c_fill` : "";
+  return url.replace("/upload/", `/upload/f_${format}${dims},fl_attachment/`);
 }
 
 export const Route = createFileRoute("/_app/thumbnail-studio")({
@@ -132,6 +135,7 @@ function ThumbnailFrame({
   url,
   onLoad,
   loading,
+  onExpand,
 }: {
   ratio: string;
   className?: string;
@@ -141,6 +145,7 @@ function ThumbnailFrame({
   url?: string;
   onLoad?: () => void;
   loading?: boolean;
+  onExpand?: () => void;
 }) {
   const posClass: Record<Position, string> = {
     TL: "items-start justify-start text-left",
@@ -156,7 +161,7 @@ function ThumbnailFrame({
   return (
     <div
       className={cn(
-        "relative flex w-full overflow-hidden rounded-lg border border-border bg-surface-2",
+        "group relative flex w-full overflow-hidden rounded-lg border border-border bg-surface-2",
         aspectClass(ratio),
         posClass[position ?? "BC"],
         className,
@@ -177,6 +182,19 @@ function ThumbnailFrame({
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40">
           <Loader2 className="size-5 animate-spin text-white" />
         </div>
+      ) : null}
+      {url && onExpand ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onExpand();
+          }}
+          aria-label="View full size"
+          className="absolute right-2 top-2 z-30 grid size-7 place-items-center rounded-md bg-black/50 text-white opacity-0 transition-opacity duration-150 hover:bg-black/70 focus-visible:opacity-100 group-hover:opacity-100"
+        >
+          <Expand className="size-3.5" />
+        </button>
       ) : null}
       {overlay ? (
         <span
@@ -202,6 +220,7 @@ function ThumbnailStudioPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [compare, setCompare] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const [overlay, setOverlay] = useState("");
   const [fontSize, setFontSize] = useState(22);
@@ -216,6 +235,7 @@ function ThumbnailStudioPage() {
   const [highlights, setHighlights] = useState(0);
   const [upscale, setUpscale] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
+  const [exportSize, setExportSize] = useState<{ width: number; height: number } | null>(null);
 
   const [referencePreview, setReferencePreview] = useState<string | null>(null);
   const [referenceImageUrl, setReferenceImageUrl] = useState<string | null>(null);
@@ -408,6 +428,7 @@ function ThumbnailStudioPage() {
     setShadows(0);
     setHighlights(0);
     setUpscale(false);
+    setExportSize(null);
   }, [selected]);
 
   const selectedVariation = variations.find((v) => v.id === selected);
@@ -416,7 +437,7 @@ function ThumbnailStudioPage() {
     [variations, compareIds],
   );
   const editedVariationUrl = selectedVariation
-    ? applyImageEdits(selectedVariation.url, { shadows, highlights, upscale })
+    ? applyImageEdits(selectedVariation.url, { shadows, highlights, upscale, removeBackground: false })
     : undefined;
 
   useEffect(() => {
@@ -432,10 +453,10 @@ function ThumbnailStudioPage() {
         description="Compose click-worthy frames from layout presets, typography and generated imagery."
       />
 
-      <div className="grid items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <Panel title="Input">
-          <div className="space-y-5">
-            <Field label="Topic / title">
+      <div className="space-y-6">
+        <Panel title="Input" bodyClassName="space-y-6">
+          <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2 xl:grid-cols-4">
+            <Field label="Topic / title" className="sm:col-span-2">
               <Input
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
@@ -448,10 +469,18 @@ function ThumbnailStudioPage() {
             <Field label="Aspect ratio">
               <ChipGroup options={platform.aspectRatios} value={ratio} onChange={setRatio} />
             </Field>
-            <Field label="Style">
+            <Field label="Style" className="sm:col-span-2">
               <ChipGroup options={styles} value={style} onChange={setStyle} />
             </Field>
-            <Field label="Reference image" hint="Optional — used as a visual anchor.">
+            <Field label="Variations">
+              <ChipGroup
+                options={counts.map(String)}
+                value={String(count)}
+                onChange={(v) => setCount(Number(v) as (typeof counts)[number])}
+                disabled={status === "generating"}
+              />
+            </Field>
+            <Field label="Reference image" hint="Optional — used as a visual anchor." className="sm:col-span-2 xl:col-span-4">
               <input
                 ref={referenceInputRef}
                 type="file"
@@ -522,20 +551,12 @@ function ThumbnailStudioPage() {
                 </div>
               )}
             </Field>
-            <Field label="Variations">
-              <ChipGroup
-                options={counts.map(String)}
-                value={String(count)}
-                onChange={(v) => setCount(Number(v) as (typeof counts)[number])}
-                disabled={status === "generating"}
-              />
-            </Field>
-            <div className="flex items-center justify-between pt-1">
-              <CostHint credits={count * 3} />
-              <Button size="sm" onClick={generate} disabled={status === "generating" || !topic.trim()}>
-                {status === "generating" ? "Generating…" : `Generate ${count} variation${count > 1 ? "s" : ""}`}
-              </Button>
-            </div>
+          </div>
+          <div className="flex items-center justify-between border-t border-border-subtle pt-5">
+            <CostHint credits={count * 3} />
+            <Button size="sm" onClick={generate} disabled={status === "generating" || !topic.trim()}>
+              {status === "generating" ? "Generating…" : `Generate ${count} variation${count > 1 ? "s" : ""}`}
+            </Button>
           </div>
         </Panel>
 
@@ -648,7 +669,12 @@ function ThumbnailStudioPage() {
                       </Button>
                     }
                   >
-                    <ThumbnailFrame ratio={ratio} className="mt-1" url={v.url} />
+                    <ThumbnailFrame
+                      ratio={ratio}
+                      className="mt-1"
+                      url={v.url}
+                      onExpand={() => setLightboxUrl(v.url)}
+                    />
                   </OptionCard>
                 ))}
               </div>
@@ -726,7 +752,12 @@ function ThumbnailStudioPage() {
                         {["16:9", "1:1", "9:16", "4:5"].map((p) => (
                           <button
                             key={p}
-                            className="block w-full rounded-md px-2 py-1.5 text-left text-[12px] text-text-muted hover:bg-surface-2 hover:text-foreground"
+                            type="button"
+                            onClick={() => setRatio(p)}
+                            className={cn(
+                              "block w-full rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-surface-2 hover:text-foreground",
+                              ratio === p ? "text-foreground" : "text-text-muted",
+                            )}
                           >
                             {p}
                           </button>
@@ -741,14 +772,23 @@ function ThumbnailStudioPage() {
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-44 space-y-1">
-                        {["1280×720", "1920×1080", "1080×1080"].map((p) => (
-                          <button
-                            key={p}
-                            className="block w-full rounded-md px-2 py-1.5 text-left text-[12px] text-text-muted hover:bg-surface-2 hover:text-foreground"
-                          >
-                            {p}
-                          </button>
-                        ))}
+                        {["1280×720", "1920×1080", "1080×1080"].map((p) => {
+                          const [w, h] = p.split("×").map(Number);
+                          const isActive = exportSize?.width === w && exportSize?.height === h;
+                          return (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => setExportSize({ width: w!, height: h! })}
+                              className={cn(
+                                "block w-full rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-surface-2 hover:text-foreground",
+                                isActive ? "text-foreground" : "text-text-muted",
+                              )}
+                            >
+                              {p}
+                            </button>
+                          );
+                        })}
                       </PopoverContent>
                     </Popover>
                     <Button size="sm" variant="outline" onClick={undo} disabled={history.length === 0}>
@@ -815,7 +855,7 @@ function ThumbnailStudioPage() {
                         key={format}
                         onClick={() => {
                           const a = document.createElement("a");
-                          a.href = toExportUrl(editedVariationUrl ?? selectedVariation.url, format);
+                          a.href = toExportUrl(editedVariationUrl ?? selectedVariation.url, format, exportSize);
                           a.click();
                         }}
                       >
@@ -843,6 +883,8 @@ function ThumbnailStudioPage() {
           ) : null}
         </div>
       </div>
+
+      <ImageLightbox url={lightboxUrl} onOpenChange={(open) => !open && setLightboxUrl(null)} />
     </div>
   );
 }

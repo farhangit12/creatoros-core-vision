@@ -17,6 +17,7 @@ import {
   RotateCcw,
   X,
   Loader2,
+  Expand,
 } from "lucide-react";
 import { PageHeader, SectionLabel, EmptyState } from "@/components/app/primitives";
 import {
@@ -56,6 +57,7 @@ import {
   uploadReferenceImageAction,
 } from "@/lib/server/ai/image-studio";
 import { applyImageEdits, hasImageEdits } from "@/lib/image-edit-transforms";
+import { ImageLightbox } from "@/components/app/image-lightbox";
 import { listProjects } from "@/lib/server/projects";
 import { linkAssetToProject } from "@/lib/server/project-content";
 import { getGeneration } from "@/lib/server/ai/history";
@@ -134,6 +136,7 @@ function ImageFrame({
   filter,
   onLoad,
   loading,
+  onExpand,
 }: {
   ratio: string;
   className?: string;
@@ -141,11 +144,12 @@ function ImageFrame({
   filter?: string;
   onLoad?: () => void;
   loading?: boolean;
+  onExpand?: () => void;
 }) {
   return (
     <div
       className={cn(
-        "relative flex items-center justify-center overflow-hidden rounded-lg border border-border bg-surface-2",
+        "group relative flex items-center justify-center overflow-hidden rounded-lg border border-border bg-surface-2",
         aspectClass(ratio),
         className,
       )}
@@ -166,6 +170,19 @@ function ImageFrame({
         <div className="absolute inset-0 flex items-center justify-center bg-black/40">
           <Loader2 className="size-5 animate-spin text-white" />
         </div>
+      ) : null}
+      {url && onExpand ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onExpand();
+          }}
+          aria-label="View full size"
+          className="absolute right-2 top-2 z-10 grid size-7 place-items-center rounded-md bg-black/50 text-white opacity-0 transition-opacity duration-150 hover:bg-black/70 focus-visible:opacity-100 group-hover:opacity-100"
+        >
+          <Expand className="size-3.5" />
+        </button>
       ) : null}
     </div>
   );
@@ -193,6 +210,7 @@ function ImageStudioPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [compare, setCompare] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const [width, setWidth] = useState(1080);
   const [height, setHeight] = useState(1350);
@@ -201,7 +219,6 @@ function ImageStudioPage() {
   const [contrast, setContrast] = useState(0);
   const [saturation, setSaturation] = useState(0);
   const [warmth, setWarmth] = useState(0);
-  const [bgState, setBgState] = useState<"idle" | "processing" | "done">("idle");
 
   // Real, Cloudinary-rendered edits (unlike exposure/contrast/saturation/
   // warmth above, which are CSS-only preview and never touch the exported
@@ -210,6 +227,7 @@ function ImageStudioPage() {
   const [shadows, setShadows] = useState(0);
   const [highlights, setHighlights] = useState(0);
   const [upscale, setUpscale] = useState(false);
+  const [removeBackground, setRemoveBackground] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
 
   const { data: session } = useSession();
@@ -398,11 +416,6 @@ function ImageStudioPage() {
     variationMutation.mutate(sourceAssetId);
   }
 
-  function removeBackground() {
-    setBgState("processing");
-    window.setTimeout(() => setBgState("done"), 1000);
-  }
-
   function resetAdjustments() {
     setExposure(0);
     setContrast(0);
@@ -411,6 +424,7 @@ function ImageStudioPage() {
     setShadows(0);
     setHighlights(0);
     setUpscale(false);
+    setRemoveBackground(false);
   }
 
   // Edits are per-image -- switching selection (a new generation, or picking
@@ -420,12 +434,13 @@ function ImageStudioPage() {
     setShadows(0);
     setHighlights(0);
     setUpscale(false);
+    setRemoveBackground(false);
   }, [selected]);
 
   const selectedImage = images.find((i) => i.id === selected);
   const compareImages = images.filter((i) => compareIds.includes(i.id));
   const editedImageUrl = selectedImage
-    ? applyImageEdits(selectedImage.url, { shadows, highlights, upscale })
+    ? applyImageEdits(selectedImage.url, { shadows, highlights, upscale, removeBackground })
     : undefined;
 
   useEffect(() => {
@@ -708,7 +723,12 @@ function ImageStudioPage() {
                       </div>
                     }
                   >
-                    <ImageFrame ratio={ratio} className="mt-1" url={img.url} />
+                    <ImageFrame
+                      ratio={ratio}
+                      className="mt-1"
+                      url={img.url}
+                      onExpand={() => setLightboxUrl(img.url)}
+                    />
                   </OptionCard>
                 ))}
               </div>
@@ -827,15 +847,15 @@ function ImageStudioPage() {
                   <RotateCcw className="size-3.5" />
                   Reset all
                 </Button>
-                <Button size="sm" variant="outline" onClick={removeBackground} disabled={bgState === "processing"}>
+                <Button
+                  size="sm"
+                  variant={removeBackground ? "default" : "outline"}
+                  aria-pressed={removeBackground}
+                  onClick={() => setRemoveBackground((v) => !v)}
+                >
                   <Eraser className="size-3.5" />
-                  {bgState === "processing" ? "Processing…" : "Remove background"}
+                  {removeBackground ? "Background removed" : "Remove background"}
                 </Button>
-                {bgState === "done" ? (
-                  <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-subtle">
-                    Placeholder — connects later
-                  </span>
-                ) : null}
               </div>
             </Panel>
           ) : null}
@@ -924,6 +944,8 @@ function ImageStudioPage() {
           ) : null}
         </div>
       </div>
+
+      <ImageLightbox url={lightboxUrl} onOpenChange={(open) => !open && setLightboxUrl(null)} />
     </div>
   );
 }
