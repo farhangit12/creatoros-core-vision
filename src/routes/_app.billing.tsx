@@ -1,9 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { Check, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader, SectionLabel } from "@/components/app/primitives";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { getCreditBalance } from "@/lib/server/credits";
+import { PLANS } from "@/lib/credits";
 
 export const Route = createFileRoute("/_app/billing")({
   head: () => ({
@@ -23,16 +27,20 @@ export const Route = createFileRoute("/_app/billing")({
   component: BillingPage,
 });
 
+// Credit numbers come from PLANS (src/lib/credits.ts) -- the same source
+// the server uses to actually grant/reset balances, so this page can never
+// drift from what a user really gets. Scale was recalibrated from an
+// earlier 8,000cr/mo draft after checking real backend capacity: the image
+// pipeline runs on Cloudflare Workers AI's free tier, a shared ceiling for
+// the whole app (not per user) -- see PLANS's comment for the full math.
 const plans = [
   {
-    id: "free",
-    name: "Free",
-    monthly: 0,
-    credits: 150,
+    ...PLANS.free,
+    recommended: false,
     tagline: "Low-risk product discovery.",
     cta: "Start Free",
     features: [
-      "150 CreatorOS credits / month",
+      `${PLANS.free.monthlyCredits.toLocaleString()} CreatorOS credits / month`,
       "AI Chat",
       "Script Studio",
       "Basic Image generation",
@@ -44,15 +52,12 @@ const plans = [
     ],
   },
   {
-    id: "pro",
-    name: "Pro",
-    monthly: 29,
-    credits: 2000,
+    ...PLANS.pro,
     recommended: true,
     tagline: "Primary individual creator plan.",
     cta: "Upgrade to Pro",
     features: [
-      "2,000 CreatorOS credits / month",
+      `${PLANS.pro.monthlyCredits.toLocaleString()} CreatorOS credits / month`,
       "AI Chat",
       "Full Script Studio",
       "Image Studio",
@@ -65,32 +70,34 @@ const plans = [
     ],
   },
   {
-    id: "scale",
-    name: "Scale",
-    monthly: 79,
-    credits: 8000,
+    ...PLANS.scale,
+    recommended: false,
     tagline: "High-volume creators / creator businesses.",
     cta: "Upgrade to Scale",
     features: [
-      "8,000 CreatorOS credits / month",
+      `${PLANS.scale.monthlyCredits.toLocaleString()} CreatorOS credits / month`,
       "Everything in Pro",
       "Higher generation limits",
-      "Priority generation queue",
       "Higher image-generation allowance",
       "Higher project/storage allowance",
       "Advanced usage visibility",
       "Early access to new capabilities",
+      "Image/thumbnail generation may briefly queue during high shared demand across all users",
     ],
   },
 ];
 
 const comparisonRows = [
-  { feature: "Monthly Credits", free: "150 credits", pro: "2,000 credits", scale: "8,000 credits" },
-  { feature: "AI Creation", free: "Chat, Script, Basic Visuals", pro: "Full Script, Image & Thumbnail Studios", scale: "Full Studios + Priority Output" },
+  {
+    feature: "Monthly Credits",
+    free: `${PLANS.free.monthlyCredits.toLocaleString()} credits`,
+    pro: `${PLANS.pro.monthlyCredits.toLocaleString()} credits`,
+    scale: `${PLANS.scale.monthlyCredits.toLocaleString()} credits`,
+  },
+  { feature: "AI Creation", free: "Chat, Script, Basic Visuals", pro: "Full Script, Image & Thumbnail Studios", scale: "Full Studios + Higher Allowance" },
   { feature: "Projects", free: "Limited (3 active)", pro: "Unlimited", scale: "Unlimited" },
   { feature: "Content Planner", free: "Standard Calendar", pro: "Standard Calendar", scale: "Standard + Extended Queue" },
-  { feature: "Generation Priority", free: "Standard", pro: "Faster priority", scale: "Priority queue" },
-  { feature: "Usage Limits", free: "Discovery cap", pro: "Higher creator limits", scale: "Maximum throughput" },
+  { feature: "Usage Limits", free: "Discovery cap", pro: "Higher creator limits", scale: "Highest per-user allowance" },
 ];
 
 function notifyUnavailable() {
@@ -100,6 +107,13 @@ function notifyUnavailable() {
 }
 
 function BillingPage() {
+  const getCreditBalanceFn = useServerFn(getCreditBalance);
+  const { data: account } = useQuery({
+    queryKey: ["credit-balance"],
+    queryFn: () => getCreditBalanceFn(),
+  });
+  const currentPlan = account ? (PLANS[account.planId as keyof typeof PLANS] ?? PLANS.free) : undefined;
+
   return (
     <div className="space-y-12">
       <PageHeader
@@ -110,12 +124,20 @@ function BillingPage() {
 
       <section>
         <SectionLabel>Current plan</SectionLabel>
-        <div className="rounded-2xl border border-dashed border-border p-7">
-          <p className="text-[14px] text-foreground">Not available yet</p>
-          <p className="mt-2 max-w-md text-[13px] leading-relaxed text-text-subtle">
-            Your active plan and credit allowance will show here once billing
-            is connected.
-          </p>
+        <div className="rounded-2xl border border-border p-7">
+          {account && currentPlan ? (
+            <>
+              <p className="text-[15px] font-medium text-foreground">{currentPlan.name} plan</p>
+              <p className="mt-2 font-mono text-[13px] text-accent-brand">
+                {account.balance.toLocaleString()} of {currentPlan.monthlyCredits.toLocaleString()} credits remaining
+              </p>
+              <p className="mt-2 text-[13px] text-text-subtle">
+                Renews {new Date(account.renewsAt).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
+              </p>
+            </>
+          ) : (
+            <p className="text-[14px] text-text-subtle">Loading your plan…</p>
+          )}
         </div>
       </section>
 
@@ -143,11 +165,11 @@ function BillingPage() {
 
               <div className="mt-5 border-y border-border-subtle py-4">
                 <p className="font-mono text-[30px] leading-none tracking-[-0.03em] text-foreground">
-                  ${p.monthly}
+                  ${p.monthlyPriceUsd}
                   <span className="text-[13px] font-normal text-text-subtle">/month</span>
                 </p>
                 <p className="mt-2 font-mono text-[11px] text-accent-brand">
-                  {p.credits.toLocaleString()} CreatorOS credits
+                  {p.monthlyCredits.toLocaleString()} CreatorOS credits
                 </p>
               </div>
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
@@ -55,6 +55,8 @@ import {
 import { generateScriptAction, rewriteScriptAction } from "@/lib/server/ai/script-studio";
 import { getGeneration } from "@/lib/server/ai/history";
 import { getUserSettings } from "@/lib/server/settings";
+import { getCreditBalance } from "@/lib/server/credits";
+import { scriptGenerateCost, scriptRewriteCost } from "@/lib/credits";
 import { useSession } from "@/lib/auth-client";
 import { platforms } from "@/lib/creator-data";
 import { useDraftAutosave } from "@/lib/local-draft-storage";
@@ -97,14 +99,15 @@ interface ScriptStudioDraft {
 }
 
 const aiActions = [
-  { key: "rewrite", label: "Rewrite", icon: RefreshCw, credits: 3 },
-  { key: "expand", label: "Expand", icon: Maximize2, credits: 4 },
-  { key: "shorten", label: "Shorten", icon: Minimize2, credits: 2 },
-  { key: "improve", label: "Improve", icon: Wand2, credits: 3 },
-  { key: "continue", label: "Continue", icon: ArrowRightLeft, credits: 4 },
+  { key: "rewrite", label: "Rewrite", icon: RefreshCw, credits: scriptRewriteCost("rewrite") },
+  { key: "expand", label: "Expand", icon: Maximize2, credits: scriptRewriteCost("expand") },
+  { key: "shorten", label: "Shorten", icon: Minimize2, credits: scriptRewriteCost("shorten") },
+  { key: "improve", label: "Improve", icon: Wand2, credits: scriptRewriteCost("improve") },
+  { key: "continue", label: "Continue", icon: ArrowRightLeft, credits: scriptRewriteCost("continue") },
 ];
 
 function ScriptStudioPage() {
+  const queryClient = useQueryClient();
   const { id: platformId, setId: setPlatformId, platform } = usePlatform("youtube");
   const [title, setTitle] = useState("");
 
@@ -119,6 +122,12 @@ function ScriptStudioPage() {
   const { data: settings } = useQuery({
     queryKey: SETTINGS_QUERY_KEY,
     queryFn: () => getUserSettingsFn(),
+  });
+
+  const getCreditBalanceFn = useServerFn(getCreditBalance);
+  const { data: creditAccount } = useQuery({
+    queryKey: ["credit-balance"],
+    queryFn: () => getCreditBalanceFn(),
   });
   useEffect(() => {
     if (settings?.defaultAiTone && tones.includes(settings.defaultAiTone)) {
@@ -256,8 +265,10 @@ function ScriptStudioPage() {
       setHasGenerated(true);
       setSelectedOption(null);
       setSections([]);
+      queryClient.invalidateQueries({ queryKey: ["credit-balance"] });
     },
-    onError: () => toast.error("Couldn't generate a script. Try again."),
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Couldn't generate a script. Try again."),
   });
 
   const handleGenerate = () => {
@@ -289,8 +300,10 @@ function ScriptStudioPage() {
         const update = updates.find((u) => u.id === s.id);
         return update ? { ...s, text: update.text } : s;
       }));
+      queryClient.invalidateQueries({ queryKey: ["credit-balance"] });
     },
-    onError: () => toast.error("Couldn't rewrite that section. Try again."),
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Couldn't rewrite that section. Try again."),
     onSettled: () => setProcessingAction(null),
   });
 
@@ -461,11 +474,17 @@ function ScriptStudioPage() {
           <PlatformGuidance platform={platform} />
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle pt-5">
-            <CostHint credits={multiOption ? 18 : 7} />
+            <CostHint credits={scriptGenerateCost(multiOption)} balance={creditAccount?.balance} />
             {generateMutation.isPending ? (
               <GeneratingState label="Drafting script options" />
             ) : (
-              <Button onClick={handleGenerate} disabled={!topic.trim()}>
+              <Button
+                onClick={handleGenerate}
+                disabled={
+                  !topic.trim() ||
+                  (creditAccount ? creditAccount.balance < scriptGenerateCost(multiOption) : false)
+                }
+              >
                 <Sparkles className="size-3.5" />
                 Generate
               </Button>
@@ -522,35 +541,53 @@ function ScriptStudioPage() {
                   <Panel title="AI actions" bodyClassName="p-3">
                     <TooltipProvider delayDuration={200}>
                       <div className="flex flex-wrap items-center gap-2">
-                        {aiActions.map((a) => (
-                          <Tooltip key={a.key}>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => runAction(a.key)}
-                                disabled={processingAction === a.key}
-                              >
-                                {processingAction === a.key ? (
-                                  <RefreshCw className="size-3.5 animate-spin" />
-                                ) : (
-                                  <a.icon className="size-3.5" />
-                                )}
-                                {a.label}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <CostHint credits={a.credits} />
-                            </TooltipContent>
-                          </Tooltip>
-                        ))}
+                        {aiActions.map((a) => {
+                          // Toolbar actions rewrite every current section at
+                          // once (see rewriteMutation's Promise.all over
+                          // `sections`), so the real charge is per-section
+                          // cost x section count, not the flat per-section
+                          // number -- shown accurately here since it's now a
+                          // real deduction, not just a cosmetic estimate.
+                          const totalCost = a.credits * Math.max(sections.length, 1);
+                          const insufficient = creditAccount ? creditAccount.balance < totalCost : false;
+                          return (
+                            <Tooltip key={a.key}>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => runAction(a.key)}
+                                  disabled={processingAction === a.key || insufficient}
+                                >
+                                  {processingAction === a.key ? (
+                                    <RefreshCw className="size-3.5 animate-spin" />
+                                  ) : (
+                                    <a.icon className="size-3.5" />
+                                  )}
+                                  {a.label}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <CostHint credits={totalCost} balance={creditAccount?.balance} />
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        })}
 
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <div>
                               <DropdownMenu open={tonePickerOpen} onOpenChange={setTonePickerOpen}>
                                 <DropdownMenuTrigger asChild>
-                                  <Button variant="outline" size="sm">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={
+                                      creditAccount
+                                        ? creditAccount.balance < scriptRewriteCost("tone-x") * Math.max(sections.length, 1)
+                                        : false
+                                    }
+                                  >
                                     <Rows3 className="size-3.5" />
                                     Change tone
                                   </Button>
@@ -569,7 +606,10 @@ function ScriptStudioPage() {
                             </div>
                           </TooltipTrigger>
                           <TooltipContent>
-                            <CostHint credits={3} />
+                            <CostHint
+                              credits={scriptRewriteCost("tone-x") * Math.max(sections.length, 1)}
+                              balance={creditAccount?.balance}
+                            />
                           </TooltipContent>
                         </Tooltip>
                       </div>

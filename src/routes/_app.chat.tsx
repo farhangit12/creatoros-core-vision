@@ -77,6 +77,8 @@ import {
   type MessageRecord,
 } from "@/lib/server/ai/chat";
 import { getUserSettings } from "@/lib/server/settings";
+import { getCreditBalance } from "@/lib/server/credits";
+import { CREDIT_COSTS } from "@/lib/credits";
 import { useSession } from "@/lib/auth-client";
 import { useDraftAutosave } from "@/lib/local-draft-storage";
 
@@ -195,6 +197,7 @@ function ChatPageImpl() {
   const clearMessagesFn = useServerFn(clearConversationMessages);
   const getUserSettingsFn = useServerFn(getUserSettings);
   const getAttachmentSignatureFn = useServerFn(getChatAttachmentUploadSignature);
+  const getCreditBalanceFn = useServerFn(getCreditBalance);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -213,6 +216,12 @@ function ChatPageImpl() {
     queryKey: SETTINGS_QUERY_KEY,
     queryFn: () => getUserSettingsFn(),
   });
+
+  const { data: creditAccount } = useQuery({
+    queryKey: ["credit-balance"],
+    queryFn: () => getCreditBalanceFn(),
+  });
+  const insufficientCredits = creditAccount ? creditAccount.balance < CREDIT_COSTS.chat : false;
   useEffect(() => {
     if (settings?.defaultAiTone && tones.includes(settings.defaultAiTone)) {
       setToneValue(settings.defaultAiTone);
@@ -321,11 +330,12 @@ function ChatPageImpl() {
       });
       if (wasNew) setActiveId(result.conversationId);
       queryClient.invalidateQueries({ queryKey: CHAT_CONVERSATIONS_KEY });
+      queryClient.invalidateQueries({ queryKey: ["credit-balance"] });
       setPendingMessages([]);
       setVisuallyStopped(false);
     },
-    onError: () => {
-      toast.error("Couldn't send that message. Try again.");
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Couldn't send that message. Try again.");
       setPendingMessages([]);
       setVisuallyStopped(false);
     },
@@ -844,7 +854,7 @@ function ChatPageImpl() {
                 </SelectContent>
               </Select>
               <div className="ml-auto flex items-center gap-3">
-                <CostHint credits={4} />
+                <CostHint credits={CREDIT_COSTS.chat} balance={creditAccount?.balance} />
                 {isGenerating ? (
                   <Button size="sm" variant="outline" onClick={stopGeneration} className="gap-1.5">
                     <Square className="size-3.5" /> Stop
@@ -855,7 +865,8 @@ function ChatPageImpl() {
                     onClick={handleSend}
                     disabled={
                       (!draft.trim() && pendingAttachments.length === 0) ||
-                      pendingAttachments.some((a) => a.uploading)
+                      pendingAttachments.some((a) => a.uploading) ||
+                      insufficientCredits
                     }
                     className="gap-1.5"
                   >

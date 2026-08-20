@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
@@ -51,6 +51,8 @@ import { applyImageEdits } from "@/lib/image-edit-transforms";
 import { ImageLightbox } from "@/components/app/image-lightbox";
 import { getGeneration } from "@/lib/server/ai/history";
 import { getUserSettings } from "@/lib/server/settings";
+import { getCreditBalance } from "@/lib/server/credits";
+import { imageCost } from "@/lib/credits";
 import { useSession } from "@/lib/auth-client";
 import { platforms } from "@/lib/creator-data";
 import { useDraftAutosave } from "@/lib/local-draft-storage";
@@ -210,6 +212,7 @@ function ThumbnailFrame({
 
 function ThumbnailStudioPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { id, setId, platform } = usePlatform("youtube");
   const [topic, setTopic] = useState("");
   const [ratio, setRatio] = useState((platform.aspectRatios[0] ?? "16:9"));
@@ -261,6 +264,12 @@ function ThumbnailStudioPage() {
   const { data: settings } = useQuery({
     queryKey: SETTINGS_QUERY_KEY,
     queryFn: () => getUserSettingsFn(),
+  });
+
+  const getCreditBalanceFn = useServerFn(getCreditBalance);
+  const { data: creditAccount } = useQuery({
+    queryKey: ["credit-balance"],
+    queryFn: () => getCreditBalanceFn(),
   });
 
   useEffect(() => {
@@ -381,6 +390,7 @@ function ThumbnailStudioPage() {
         })),
       );
       setStatus("done");
+      queryClient.invalidateQueries({ queryKey: ["credit-balance"] });
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Couldn't generate thumbnails. Try again.");
@@ -553,8 +563,16 @@ function ThumbnailStudioPage() {
             </Field>
           </div>
           <div className="flex items-center justify-between border-t border-border-subtle pt-5">
-            <CostHint credits={count * 3} />
-            <Button size="sm" onClick={generate} disabled={status === "generating" || !topic.trim()}>
+            <CostHint credits={imageCost(count)} balance={creditAccount?.balance} />
+            <Button
+              size="sm"
+              onClick={generate}
+              disabled={
+                status === "generating" ||
+                !topic.trim() ||
+                (creditAccount ? creditAccount.balance < imageCost(count) : false)
+              }
+            >
               {status === "generating" ? "Generating…" : `Generate ${count} variation${count > 1 ? "s" : ""}`}
             </Button>
           </div>
@@ -659,6 +677,7 @@ function ThumbnailStudioPage() {
                         size="sm"
                         variant="outline"
                         className="w-full"
+                        disabled={creditAccount ? creditAccount.balance < imageCost(count) : false}
                         onClick={(e) => {
                           e.stopPropagation();
                           regenerate(v.id);

@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { getUsageSummary, listGenerations } from "@/lib/server/ai/ai-usage";
+import { getCreditBalance } from "@/lib/server/credits";
+import { PLANS } from "@/lib/credits";
 
 export const Route = createFileRoute("/_app/ai-usage")({
   head: () => ({
@@ -139,6 +141,15 @@ function AiUsagePage() {
     queryFn: () => getUsageSummaryFn(),
   });
 
+  const getCreditBalanceFn = useServerFn(getCreditBalance);
+  const { data: creditAccount } = useQuery({
+    queryKey: ["credit-balance"],
+    queryFn: () => getCreditBalanceFn(),
+  });
+  const creditPlan = creditAccount
+    ? (PLANS[creditAccount.planId as keyof typeof PLANS] ?? PLANS.free)
+    : undefined;
+
   const [activeFeature, setActiveFeature] = useState<(typeof FEATURE_ORDER)[number] | null>(null);
 
   const categories = useMemo(() => {
@@ -186,13 +197,18 @@ function AiUsagePage() {
         <div className="flex flex-col justify-between bg-surface p-7">
           <div>
             <span className="label-eyebrow">Credits & plan</span>
-            <p className="mt-5 text-[15px] font-medium tracking-[-0.02em] text-foreground">
-              Not available yet
-            </p>
-            <p className="mt-2 text-[13px] text-text-muted">
-              Credit balance and plan details will show here once billing is
-              connected.
-            </p>
+            {creditAccount && creditPlan ? (
+              <>
+                <p className="mt-5 text-[15px] font-medium tracking-[-0.02em] text-foreground">
+                  {creditPlan.name} — {creditAccount.balance.toLocaleString()} credits left
+                </p>
+                <p className="mt-2 text-[13px] text-text-muted">
+                  Renews {new Date(creditAccount.renewsAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                </p>
+              </>
+            ) : (
+              <p className="mt-5 text-[15px] font-medium tracking-[-0.02em] text-foreground">Loading…</p>
+            )}
           </div>
           <Button asChild size="sm" variant="outline" className="mt-6 w-full">
             <Link to="/billing">View plans</Link>

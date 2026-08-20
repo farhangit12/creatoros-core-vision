@@ -11,6 +11,8 @@ import { resolveOperation } from "@/lib/ai/registry";
 import type { ChatMessage, ChatRole, GenerationRecord } from "@/lib/ai/types";
 import { buildAttachmentContext } from "@/lib/server/ai/chat-attachments";
 import { createUploadSignature, type UploadSignature } from "@/lib/server/files-storage";
+import { checkAndReserveCredits, deductCredits } from "@/lib/server/credits";
+import { CREDIT_COSTS } from "@/lib/credits";
 
 export type ConversationRecord = typeof aiConversations.$inferSelect;
 export type MessageRecord = typeof aiMessages.$inferSelect;
@@ -182,6 +184,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
   .validator((input: unknown) => sendMessageSchema.parse(input))
   .handler(async ({ data }) => {
     const userId = await requireUserId();
+    await checkAndReserveCredits(userId, CREDIT_COSTS.chat);
     const startedAt = new Date();
 
     const conversation = data.conversationId
@@ -251,6 +254,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
         .returning();
 
       await db.insert(aiGenerations).values(toDbGeneration(userId, result.generation));
+      await deductCredits({ userId, cost: CREDIT_COSTS.chat, generationId: result.generation.id });
       const titleUpdate =
         priorMessages.length === 0 && !conversation.title
           ? { title: deriveConversationTitle(data.content) }

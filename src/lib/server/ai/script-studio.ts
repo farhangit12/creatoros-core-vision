@@ -8,6 +8,8 @@ import { auth } from "@/lib/auth";
 import { aiConversations, aiGenerations } from "@/db/schema";
 import { generateScript, rewriteScript } from "@/lib/ai/text-service";
 import { resolveOperation } from "@/lib/ai/registry";
+import { checkAndReserveCredits, deductCredits } from "@/lib/server/credits";
+import { scriptGenerateCost, scriptRewriteCost } from "@/lib/credits";
 import type { GenerationRecord } from "@/lib/ai/types";
 import type { TextOperation } from "@/lib/ai/operations";
 
@@ -113,6 +115,8 @@ export const generateScriptAction = createServerFn({ method: "POST" })
     if (data.conversationId) {
       await assertOwnedConversation(userId, data.conversationId);
     }
+    const cost = scriptGenerateCost(data.multiOption);
+    await checkAndReserveCredits(userId, cost);
     const startedAt = new Date();
     const { conversationId, audience, ...rest } = data;
     const input = { ...rest, ...(audience !== undefined ? { audience } : {}) };
@@ -124,6 +128,7 @@ export const generateScriptAction = createServerFn({ method: "POST" })
         ...(conversationId !== undefined ? { conversationId } : {}),
       });
       await db.insert(aiGenerations).values(toDbGeneration(userId, result.generation));
+      await deductCredits({ userId, cost, generationId: result.generation.id });
       return { ...result, generation: toSerializableGeneration(result.generation) };
     } catch (error) {
       await recordFailedGeneration({
@@ -145,6 +150,8 @@ export const rewriteScriptAction = createServerFn({ method: "POST" })
     if (data.conversationId) {
       await assertOwnedConversation(userId, data.conversationId);
     }
+    const cost = scriptRewriteCost(data.action);
+    await checkAndReserveCredits(userId, cost);
     const startedAt = new Date();
     const { conversationId, tone, ...rest } = data;
 
@@ -156,6 +163,7 @@ export const rewriteScriptAction = createServerFn({ method: "POST" })
         ...(tone !== undefined ? { tone } : {}),
       });
       await db.insert(aiGenerations).values(toDbGeneration(userId, result.generation));
+      await deductCredits({ userId, cost, generationId: result.generation.id });
       return { ...result, generation: toSerializableGeneration(result.generation) };
     } catch (error) {
       await recordFailedGeneration({

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
@@ -62,6 +62,8 @@ import { listProjects } from "@/lib/server/projects";
 import { linkAssetToProject } from "@/lib/server/project-content";
 import { getGeneration } from "@/lib/server/ai/history";
 import { getUserSettings } from "@/lib/server/settings";
+import { getCreditBalance } from "@/lib/server/credits";
+import { imageCost } from "@/lib/credits";
 import { useSession } from "@/lib/auth-client";
 import { platforms } from "@/lib/creator-data";
 import { useDraftAutosave } from "@/lib/local-draft-storage";
@@ -190,6 +192,7 @@ function ImageFrame({
 
 function ImageStudioPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { id, setId, platform } = usePlatform("instagram");
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
@@ -237,6 +240,12 @@ function ImageStudioPage() {
   const { data: settings } = useQuery({
     queryKey: SETTINGS_QUERY_KEY,
     queryFn: () => getUserSettingsFn(),
+  });
+
+  const getCreditBalanceFn = useServerFn(getCreditBalance);
+  const { data: creditAccount } = useQuery({
+    queryKey: ["credit-balance"],
+    queryFn: () => getCreditBalanceFn(),
   });
 
   useEffect(() => {
@@ -376,6 +385,7 @@ function ImageStudioPage() {
     onSuccess: (result) => {
       setImages(result.assets.map((a) => ({ id: a.id, recommended: a.recommended, url: a.url })));
       setStatus("done");
+      queryClient.invalidateQueries({ queryKey: ["credit-balance"] });
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Couldn't generate images. Try again.");
@@ -396,6 +406,7 @@ function ImageStudioPage() {
     onSuccess: (result) => {
       setImages(result.assets.map((a) => ({ id: a.id, recommended: a.recommended, url: a.url })));
       setStatus("done");
+      queryClient.invalidateQueries({ queryKey: ["credit-balance"] });
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Couldn't create a variation. Try again.");
@@ -599,8 +610,16 @@ function ImageStudioPage() {
               />
             </Field>
             <div className="flex items-center justify-between pt-1">
-              <CostHint credits={count * 3} />
-              <Button size="sm" onClick={generate} disabled={status === "generating" || !prompt.trim()}>
+              <CostHint credits={imageCost(count)} balance={creditAccount?.balance} />
+              <Button
+                size="sm"
+                onClick={generate}
+                disabled={
+                  status === "generating" ||
+                  !prompt.trim() ||
+                  (creditAccount ? creditAccount.balance < imageCost(count) : false)
+                }
+              >
                 {status === "generating" ? "Generating…" : "Generate"}
               </Button>
             </div>
@@ -700,6 +719,7 @@ function ImageStudioPage() {
                           size="sm"
                           variant="outline"
                           className="w-full"
+                          disabled={creditAccount ? creditAccount.balance < imageCost(count) : false}
                           onClick={(e) => {
                             e.stopPropagation();
                             generate();
@@ -712,6 +732,7 @@ function ImageStudioPage() {
                           size="sm"
                           variant="outline"
                           className="w-full"
+                          disabled={creditAccount ? creditAccount.balance < imageCost(1) : false}
                           onClick={(e) => {
                             e.stopPropagation();
                             createVariation(img.id);
@@ -720,6 +741,9 @@ function ImageStudioPage() {
                           <Copy className="size-3.5" />
                           Create variation
                         </Button>
+                        <div className="text-center">
+                          <CostHint credits={imageCost(1)} balance={creditAccount?.balance} />
+                        </div>
                       </div>
                     }
                   >

@@ -6,6 +6,7 @@ import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { sendChangeEmailVerification, sendPasswordResetEmail } from "@/lib/server/email";
 import { deleteFromCloudinary } from "@/lib/server/files-storage";
+import { initCreditAccountForNewUser } from "@/lib/server/credits";
 
 /**
  * Best-effort cleanup of the user's uploaded files on Cloudinary before the
@@ -65,6 +66,17 @@ export const auth = betterAuth({
     google: {
       clientId: process.env["GOOGLE_CLIENT_ID"] as string,
       clientSecret: process.env["GOOGLE_CLIENT_SECRET"] as string,
+    },
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user) => {
+          // Covers both email/password and Google OAuth signups -- both
+          // create a `user` row through this same hook.
+          await initCreditAccountForNewUser(user.id);
+        },
+      },
     },
   },
   secret: process.env["BETTER_AUTH_SECRET"],

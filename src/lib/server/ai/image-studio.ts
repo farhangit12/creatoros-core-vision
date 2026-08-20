@@ -9,6 +9,8 @@ import { aiAssets, aiConversations, aiGenerations } from "@/db/schema";
 import { createVariation, generateImages } from "@/lib/ai/image-service";
 import { resolveOperation } from "@/lib/ai/registry";
 import { uploadImageToCloudinary } from "@/lib/ai/providers/image/cloudinary-upload";
+import { checkAndReserveCredits, checkGlobalImageCapacity, deductCredits } from "@/lib/server/credits";
+import { imageCost } from "@/lib/credits";
 import type { GenerationRecord, ImageAsset } from "@/lib/ai/types";
 import type { ImageOperation } from "@/lib/ai/operations";
 
@@ -183,6 +185,9 @@ export const generateImageAction = createServerFn({ method: "POST" })
     if (data.conversationId) {
       await assertOwnedConversation(userId, data.conversationId);
     }
+    const cost = imageCost(data.count);
+    await checkAndReserveCredits(userId, cost);
+    await checkGlobalImageCapacity();
     const startedAt = new Date();
     const { conversationId, style, useCase, platform, referenceImageUrl, overlayText, ...rest } = data;
     const input = {
@@ -202,6 +207,7 @@ export const generateImageAction = createServerFn({ method: "POST" })
       });
       await db.insert(aiGenerations).values(toDbGeneration(userId, result.generation));
       await persistImageAssets(userId, result.generation.id, result.assets);
+      await deductCredits({ userId, cost, generationId: result.generation.id });
       return { ...result, generation: toSerializableGeneration(result.generation) };
     } catch (error) {
       await recordFailedGeneration({
@@ -224,6 +230,9 @@ export const createImageVariationAction = createServerFn({ method: "POST" })
       await assertOwnedConversation(userId, data.conversationId);
     }
     const sourceAsset = await loadOwnedAsset(userId, data.sourceAssetId);
+    const cost = imageCost(data.count ?? 1);
+    await checkAndReserveCredits(userId, cost);
+    await checkGlobalImageCapacity();
     const startedAt = new Date();
     const { conversationId, prompt, count, ...rest } = data;
     const input = {
@@ -243,6 +252,7 @@ export const createImageVariationAction = createServerFn({ method: "POST" })
       await persistImageAssets(userId, result.generation.id, result.assets, {
         sourceAssetId: data.sourceAssetId,
       });
+      await deductCredits({ userId, cost, generationId: result.generation.id });
       return { ...result, generation: toSerializableGeneration(result.generation) };
     } catch (error) {
       await recordFailedGeneration({

@@ -285,3 +285,38 @@ export const userSettings = pgTable("user_settings", {
   theme: text("theme").notNull().default("dark"),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
+
+export const planIdValues = ["free", "pro", "scale"] as const;
+
+export const userCredits = pgTable("user_credits", {
+  userId: text("userId")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  planId: text("planId").notNull().default("free"),
+  balance: integer("balance").notNull().default(0),
+  renewsAt: timestamp("renewsAt").notNull(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export const creditLedgerReasonValues = [
+  "signup_bonus",
+  "monthly_reset",
+  "ai_generation",
+  "admin_adjustment",
+] as const;
+
+export const creditLedger = pgTable(
+  "credit_ledger",
+  {
+    id: text("id").primaryKey(),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    delta: integer("delta").notNull(),
+    reason: text("reason").notNull(),
+    generationId: text("generationId").references(() => aiGenerations.id, { onDelete: "set null" }),
+    balanceAfter: integer("balanceAfter").notNull(),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+  },
+  (table) => [index("credit_ledger_userId_idx").on(table.userId)],
+);

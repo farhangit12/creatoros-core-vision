@@ -298,11 +298,13 @@ export function StatusPill({
   );
 }
 
-/** Generation cost estimate shown next to any generate control. */
-export function CostHint({ credits }: { credits: number }) {
+/** Generation cost estimate shown next to any generate control. Pass the
+ * user's current balance to flag when it can't cover this action. */
+export function CostHint({ credits, balance }: { credits: number; balance?: number | undefined }) {
+  const insufficient = balance !== undefined && balance < credits;
   return (
-    <span className="font-mono text-[11px] text-text-subtle">
-      ≈ {credits} credits
+    <span className={cn("font-mono text-[11px]", insufficient ? "text-danger" : "text-text-subtle")}>
+      ≈ {credits} credits{insufficient ? " — not enough balance" : ""}
     </span>
   );
 }

@@ -8,6 +8,8 @@ import { auth } from "@/lib/auth";
 import { aiAssets, aiConversations, aiGenerations } from "@/db/schema";
 import { generateThumbnails } from "@/lib/ai/image-service";
 import { resolveOperation } from "@/lib/ai/registry";
+import { checkAndReserveCredits, checkGlobalImageCapacity, deductCredits } from "@/lib/server/credits";
+import { imageCost } from "@/lib/credits";
 import type { GenerationRecord, ThumbnailVariation } from "@/lib/ai/types";
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
@@ -128,6 +130,9 @@ export const generateThumbnailAction = createServerFn({ method: "POST" })
     if (data.conversationId) {
       await assertOwnedConversation(userId, data.conversationId);
     }
+    const cost = imageCost(data.count ?? 1);
+    await checkAndReserveCredits(userId, cost);
+    await checkGlobalImageCapacity();
     const startedAt = new Date();
     const { conversationId, style, platform, count, referenceImageUrl, ...rest } = data;
     const input = {
@@ -146,6 +151,7 @@ export const generateThumbnailAction = createServerFn({ method: "POST" })
       });
       await db.insert(aiGenerations).values(toDbGeneration(userId, result.generation));
       await persistThumbnailAssets(userId, result.generation.id, result.variations);
+      await deductCredits({ userId, cost, generationId: result.generation.id });
       return { ...result, generation: toSerializableGeneration(result.generation) };
     } catch (error) {
       await recordFailedGeneration({
