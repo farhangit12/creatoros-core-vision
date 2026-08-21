@@ -5,6 +5,7 @@ import { renderErrorPage } from "./lib/error-page";
 import { auth } from "./lib/auth";
 import { applySecurityHeaders } from "./lib/server/security-headers";
 import { logger } from "./lib/server/logger";
+import { executionContextStorage } from "./lib/server/execution-context";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 
@@ -105,7 +106,14 @@ export default {
     const realEnv = restoreCloudflareEnv(request, env);
     const pathname = new URL(request.url).pathname;
 
-    const response = await handleRequest(request, realEnv, ctx, pathname, requestId);
+    // Runs the whole request inside an AsyncLocalStorage context carrying
+    // this request's real ExecutionContext -- see execution-context.ts for
+    // why this exists (better-auth's own background-task hook needs a real
+    // ctx.waitUntil() it has no direct access to otherwise).
+    const response = await executionContextStorage.run(
+      ctx as { waitUntil(promise: Promise<unknown>): void },
+      () => handleRequest(request, realEnv, ctx, pathname, requestId),
+    );
     const withSecurityHeaders = await applySecurityHeaders(response);
     withSecurityHeaders.headers.set("X-Request-Id", requestId);
     return withSecurityHeaders;
@@ -123,7 +131,18 @@ async function handleRequest(
     return checkHealth();
   }
   if (pathname.startsWith("/api/auth")) {
-    return auth.handler(request);
+    // Previously unwrapped -- unlike the SSR path below, a thrown/hung
+    // auth.handler() call left zero application-level trace, only
+    // Cloudflare's own generic runtime error. Real logging now, even though
+    // this can't catch a true platform-level "Worker hung" cancellation
+    // (Cloudflare kills the whole isolate before a catch block ever runs
+    // for that specific case) -- it still catches genuine thrown errors.
+    try {
+      return await auth.handler(request);
+    } catch (error) {
+      logger.error("auth.handler failed", { requestId, pathname }, error);
+      throw error;
+    }
   }
   try {
     const handler = await getServerEntry();

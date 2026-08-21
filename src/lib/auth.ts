@@ -13,6 +13,7 @@ import { initCreditAccountForNewUser } from "@/lib/server/credits";
 import { polarClient } from "@/lib/server/polar-client";
 import { syncPolarSubscriptionState } from "@/lib/server/polar-sync";
 import { recordAuditEvent } from "@/lib/server/audit-log";
+import { executionContextStorage } from "@/lib/server/execution-context";
 
 /** Best-effort cleanup of the user's uploaded files on Cloudinary before the
  * account row (and everything FK-cascaded from it) is deleted. */
@@ -259,6 +260,28 @@ export const auth = betterAuth({
   advanced: {
     ipAddress: {
       ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"],
+    },
+    // Root cause of a real, live-reproduced production bug: without this,
+    // better-auth's internal `runInBackgroundOrAwait` (used by, among other
+    // things, the database rate limiter's periodic expired-rows cleanup --
+    // node_modules/better-auth/dist/api/rate-limiter/index.mjs) has no real
+    // background-task mechanism to call, so it silently falls through to a
+    // plain `await` -- turning a "background" cleanup into something that
+    // blocks the actual response. Confirmed via a temporary diagnostic
+    // deploy (console.log immediately before/after `auth.handler(request)`
+    // in server.ts, watched live via `wrangler tail`): every failure showed
+    // the START log with no matching DONE or THREW log for that request --
+    // `auth.handler()` itself never settled -- while `/`, `/api/health`, and
+    // every other route that doesn't go through better-auth's handler
+    // stayed 100% reliable throughout. This is better-auth's own documented
+    // Cloudflare Workers pattern (see its `advanced.backgroundTasks`
+    // JSDoc) -- executionContextStorage (execution-context.ts) makes the
+    // current request's real ExecutionContext available here via
+    // AsyncLocalStorage, since this handler has no direct access to it.
+    backgroundTasks: {
+      handler: (promise: Promise<unknown>) => {
+        executionContextStorage.getStore()?.waitUntil(promise);
+      },
     },
   },
   // Best-effort audit trail for the two sensitive self-service account
