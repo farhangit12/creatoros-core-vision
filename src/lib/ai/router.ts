@@ -1,5 +1,5 @@
 import { getFallbackTextProvider, getTextProvider, resolveOperation } from "./registry";
-import { ProviderHttpError, type TextProviderRequest, type TextProviderResult } from "./providers/types";
+import { ProviderHttpError, type TextProvider, type TextProviderRequest, type TextProviderResult } from "./providers/types";
 import type { TextOperation } from "./operations";
 
 /**
@@ -23,14 +23,25 @@ export interface RoutedTextResult {
 // timeout rejects with a message containing "timeout", which
 // isRetryableProviderError already classifies as retryable -- so it
 // correctly triggers fallback instead of the request hanging indefinitely.
-// Note this only bounds the *caller's wait*: without threading an
-// AbortSignal into every provider adapter's fetch call, the original
-// request keeps running in the background until it naturally settles. A
-// real cancel would need that signal threaded through -- reported as a
-// follow-up (see "job cancellation" in the readiness audit), not silently
-// treated as solved here.
+//
+// Genuinely aborts the underlying fetch via the AbortSignal threaded into
+// TextProviderRequest (providers/types.ts) and each adapter's fetch() call
+// (groq.ts, openrouter.ts) -- this used to only bound the caller's wait
+// while the real request kept running server-side. That gap turned out not
+// to be theoretical: live-verified on the deployed Cloudflare Worker, a
+// stalled Groq call was killed by Cloudflare's own "your Worker's code had
+// hung" runtime protection before this router's own timeout ever got a
+// chance to fire and fall back, taking the whole request down instead of
+// degrading to OpenRouter. Wiring a real AbortSignal gives our own code
+// first right of cancellation instead of relying on that platform-level
+// killswitch.
 const PROVIDER_TIMEOUT_MS = 55_000;
 
+/** Generic version, still used by image-service.ts (Cloudflare Workers AI's
+ * ImageProvider interface doesn't carry an AbortSignal today) -- only bounds
+ * the caller's wait, same documented limitation as before for that path.
+ * generateWithTimeout below is the text-provider-specific version that
+ * actually cancels the underlying fetch. */
 export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
@@ -45,6 +56,26 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): 
       },
     );
   });
+}
+
+export async function generateWithTimeout(
+  provider: TextProvider,
+  request: TextProviderRequest,
+  ms: number,
+  label: string,
+): Promise<TextProviderResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await provider.generate({ ...request, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`${label} timed out after ${ms}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Best-effort, per-isolate circuit breaker: after several consecutive
@@ -132,8 +163,9 @@ export async function generateText(
     ? getFallbackTextProvider(operation)
     : undefined;
   if (fallback && openCircuitFallback) {
-    const result = await withTimeout(
-      openCircuitFallback.generate({ ...request, operation, model: fallback.model }),
+    const result = await generateWithTimeout(
+      openCircuitFallback,
+      { ...request, operation, model: fallback.model },
       PROVIDER_TIMEOUT_MS,
       `${fallback.provider}/${operation}`,
     );
@@ -142,8 +174,9 @@ export async function generateText(
   }
 
   try {
-    const result = await withTimeout(
-      primaryProvider.generate({ ...request, operation, model: primaryModel }),
+    const result = await generateWithTimeout(
+      primaryProvider,
+      { ...request, operation, model: primaryModel },
       PROVIDER_TIMEOUT_MS,
       `${config.provider}/${operation}`,
     );
@@ -158,8 +191,9 @@ export async function generateText(
     }
 
     try {
-      const result = await withTimeout(
-        fallbackProvider.generate({ ...request, operation, model: fallback.model }),
+      const result = await generateWithTimeout(
+        fallbackProvider,
+        { ...request, operation, model: fallback.model },
         PROVIDER_TIMEOUT_MS,
         `${fallback.provider}/${operation}`,
       );

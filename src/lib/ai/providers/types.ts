@@ -15,6 +15,15 @@ export interface TextProviderRequest {
   messages?: ChatMessage[];
   prompt?: string;
   metadata?: Record<string, unknown>;
+  /**
+   * Wired by router.ts's withTimeout so a timed-out call actually aborts
+   * the underlying fetch, instead of just abandoning the caller's wait
+   * while the real request keeps running server-side (see router.ts's
+   * PROVIDER_TIMEOUT_MS comment). Adapters that call fetch() directly
+   * (groq.ts, openrouter.ts) should pass this through as the request's
+   * `signal` option.
+   */
+  signal?: AbortSignal;
 }
 
 export interface TextProviderResult {

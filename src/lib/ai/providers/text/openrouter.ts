@@ -72,6 +72,7 @@ async function callOpenRouter(
   model: string,
   messages: OpenRouterMessage[],
   maxTokens: number,
+  signal: AbortSignal | undefined,
 ): Promise<{ content: string; finishReason: string | null | undefined; usage: unknown }> {
   const response = await fetch(OPENROUTER_URL, {
     method: "POST",
@@ -84,6 +85,7 @@ async function callOpenRouter(
       messages,
       max_tokens: maxTokens,
     }),
+    signal: signal ?? null,
   });
 
   const json = (await response.json()) as {
@@ -121,7 +123,12 @@ async function runChat(request: TextProviderRequest): Promise<TextProviderResult
     ...messages.filter((m) => m.role !== "system").map((m) => ({ role: m.role, content: m.content })),
   ];
 
-  const { content, finishReason, usage } = await callOpenRouter(request.model, orMessages, CHAT_MAX_TOKENS);
+  const { content, finishReason, usage } = await callOpenRouter(
+    request.model,
+    orMessages,
+    CHAT_MAX_TOKENS,
+    request.signal,
+  );
 
   return {
     content,
@@ -154,6 +161,7 @@ async function runScriptGenerate(request: TextProviderRequest): Promise<TextProv
     request.model,
     [{ role: "user", content: prompt }],
     SCRIPT_GENERATE_MAX_TOKENS,
+    request.signal,
   );
 
   return {
@@ -192,6 +200,7 @@ async function runScriptRewrite(request: TextProviderRequest): Promise<TextProvi
     request.model,
     [{ role: "user", content: prompt }],
     SCRIPT_REWRITE_MAX_TOKENS,
+    request.signal,
   );
 
   return {

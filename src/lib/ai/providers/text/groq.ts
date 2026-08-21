@@ -59,6 +59,7 @@ async function callGroq(
   model: string,
   messages: GroqMessage[],
   maxTokens: number,
+  signal: AbortSignal | undefined,
 ): Promise<{ content: string; finishReason: string | null | undefined; usage: unknown }> {
   const response = await fetch(GROQ_URL, {
     method: "POST",
@@ -71,6 +72,7 @@ async function callGroq(
       messages,
       max_tokens: maxTokens,
     }),
+    signal: signal ?? null,
   });
 
   const json = (await response.json()) as {
@@ -108,7 +110,12 @@ async function runChat(request: TextProviderRequest): Promise<TextProviderResult
     ...messages.filter((m) => m.role !== "system").map((m) => ({ role: m.role, content: m.content })),
   ];
 
-  const { content, finishReason, usage } = await callGroq(request.model, groqMessages, CHAT_MAX_TOKENS);
+  const { content, finishReason, usage } = await callGroq(
+    request.model,
+    groqMessages,
+    CHAT_MAX_TOKENS,
+    request.signal,
+  );
 
   return {
     content,
@@ -141,6 +148,7 @@ async function runScriptGenerate(request: TextProviderRequest): Promise<TextProv
     request.model,
     [{ role: "user", content: prompt }],
     SCRIPT_GENERATE_MAX_TOKENS,
+    request.signal,
   );
 
   return {
@@ -179,6 +187,7 @@ async function runScriptRewrite(request: TextProviderRequest): Promise<TextProvi
     request.model,
     [{ role: "user", content: prompt }],
     SCRIPT_REWRITE_MAX_TOKENS,
+    request.signal,
   );
 
   return {
