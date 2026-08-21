@@ -65,6 +65,20 @@ async function cleanupAvatar(image: string | null | undefined): Promise<void> {
   }
 }
 
+/** Bounds a best-effort Polar SDK call so it can never hang the request it's
+ * attached to -- these hooks are explicitly meant to be "never blocking",
+ * but a bare `await` on a third-party API call has no such guarantee on its
+ * own. Short timeout: these are fire-and-forget sync operations, not
+ * something a real user is ever waiting on directly. */
+async function withPolarTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after 8000ms`)), 8_000),
+    ),
+  ]);
+}
+
 /** Best-effort Polar customer creation, run from our own `after` hook
  * instead of the `@polar-sh/better-auth` plugin's `createCustomerOnSignUp`
  * option -- that option runs as a `before`-create hook that THROWS a raw
@@ -83,13 +97,18 @@ async function cleanupAvatar(image: string | null | undefined): Promise<void> {
  * above. */
 async function createPolarCustomerBestEffort(user: { id: string; email: string; name: string }): Promise<void> {
   try {
-    const { result } = await polarClient.customers.list({ email: user.email });
-    const existing = result.items[0];
-    if (!existing) {
-      await polarClient.customers.create({ email: user.email, name: user.name, externalId: user.id });
-    } else if (existing.externalId !== user.id) {
-      await polarClient.customers.update({ id: existing.id, customerUpdate: { externalId: user.id } });
-    }
+    await withPolarTimeout(
+      (async () => {
+        const { result } = await polarClient.customers.list({ email: user.email });
+        const existing = result.items[0];
+        if (!existing) {
+          await polarClient.customers.create({ email: user.email, name: user.name, externalId: user.id });
+        } else if (existing.externalId !== user.id) {
+          await polarClient.customers.update({ id: existing.id, customerUpdate: { externalId: user.id } });
+        }
+      })(),
+      "Polar customer creation",
+    );
   } catch (error) {
     console.error("Polar customer creation failed (non-blocking):", error);
   }
@@ -103,10 +122,13 @@ async function createPolarCustomerBestEffort(user: { id: string; email: string; 
  * customer record from real account changes going forward. */
 async function updatePolarCustomerBestEffort(user: { id: string; email: string; name: string }): Promise<void> {
   try {
-    await polarClient.customers.updateExternal({
-      externalId: user.id,
-      customerUpdateExternalID: { email: user.email, name: user.name },
-    });
+    await withPolarTimeout(
+      polarClient.customers.updateExternal({
+        externalId: user.id,
+        customerUpdateExternalID: { email: user.email, name: user.name },
+      }),
+      "Polar customer update",
+    );
   } catch (error) {
     console.error("Polar customer update failed (non-blocking):", error);
   }
@@ -120,7 +142,10 @@ async function updatePolarCustomerBestEffort(user: { id: string; email: string; 
  * was written to close for storage, just for billing data instead. */
 async function deletePolarCustomerBestEffort(userId: string): Promise<void> {
   try {
-    await polarClient.customers.deleteExternal({ externalId: userId });
+    await withPolarTimeout(
+      polarClient.customers.deleteExternal({ externalId: userId }),
+      "Polar customer delete",
+    );
   } catch (error) {
     console.error("Polar customer delete failed (non-blocking):", error);
   }
