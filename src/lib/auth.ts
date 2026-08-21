@@ -221,6 +221,21 @@ export const auth = betterAuth({
     enabled: true,
     storage: "database",
   },
+  // Without this, better-auth can't determine the real client IP on the
+  // deployed Worker (confirmed live via `wrangler tail`: it logged "Rate
+  // limiting could not determine a client IP and is falling back to a
+  // single shared per-path bucket", meaning every user shared one rate-
+  // limit counter per endpoint instead of being limited individually) --
+  // its own default only checks `x-forwarded-for`
+  // (node_modules/better-auth/node_modules/@better-auth/core/src/utils/
+  // ip.ts), not Cloudflare's dedicated `CF-Connecting-IP` header, which
+  // Cloudflare's edge always sets to the real client IP on every Worker
+  // request.
+  advanced: {
+    ipAddress: {
+      ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"],
+    },
+  },
   // Best-effort audit trail for the two sensitive self-service account
   // changes that don't go through the databaseHooks below (password/email
   // change). Wrapped so a logging failure can never break the real change
