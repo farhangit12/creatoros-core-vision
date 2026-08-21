@@ -25,6 +25,14 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# Temporary binaries (e.g. cloudflared, downloaded directly rather than via
+# npm since the npx-wrapped package's postinstall binary fetch is blocked by
+# this repo's allow-scripts policy)
+.tmp-bin/
+
+# Claude Code local tooling config (personal/machine-specific, not app code)
+.claude/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -89,5 +89,14 @@ export default defineConfig({
     optimizeDeps: {
       exclude: ["pg"],
     },
+    // Vite's dev server rejects any Host header it doesn't recognize (DNS-
+    // rebinding protection), which otherwise blocks a temporary cloudflared
+    // quick tunnel (a random *.trycloudflare.com hostname) used to give
+    // Polar's webhook a real internet-reachable URL pointing at local dev
+    // for sandbox testing. Dev-server-only setting -- has no effect on the
+    // production build/deploy.
+    server: {
+      allowedHosts: [".trycloudflare.com"],
+    },
   },
 });
