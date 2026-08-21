@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { PublicNav } from "@/components/public/public-nav";
 import { PublicFooter } from "@/components/public/public-footer";
+import { canonicalLinks } from "@/lib/canonical";
 
 export const Route = createFileRoute("/help")({
   head: () => ({
@@ -12,6 +13,7 @@ export const Route = createFileRoute("/help")({
         content: "Answers to common questions about using CreatorOS AI.",
       },
     ],
+    links: canonicalLinks("/help"),
   }),
   component: HelpPage,
 });

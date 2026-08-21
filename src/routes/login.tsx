@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { authClient } from "@/lib/auth-client";
+import { canonicalLinks } from "@/lib/canonical";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -24,6 +25,7 @@ export const Route = createFileRoute("/login")({
         content: "Sign in to your CreatorOS AI workspace.",
       },
     ],
+    links: canonicalLinks("/login"),
   }),
   component: LoginPage,
 });

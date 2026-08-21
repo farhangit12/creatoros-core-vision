@@ -65,6 +65,67 @@ async function cleanupAvatar(image: string | null | undefined): Promise<void> {
   }
 }
 
+/** Best-effort Polar customer creation, run from our own `after` hook
+ * instead of the `@polar-sh/better-auth` plugin's `createCustomerOnSignUp`
+ * option -- that option runs as a `before`-create hook that THROWS a raw
+ * `APIError` (with Polar's internal error text forwarded verbatim) on any
+ * failure, which better-auth surfaces as an unhandled 500 to the client and
+ * blocks the entire signup, even for a transient Polar-side issue or an
+ * edge-case email address Polar's validator rejects. Not required for
+ * correctness: `checkout()`/`portal()` both pass `externalCustomerId` and
+ * Polar lazily creates the customer at checkout time if one doesn't exist
+ * yet (confirmed by reading node_modules/@polar-sh/better-auth's checkout/
+ * portal source -- same `externalCustomerId` pattern used here), so a user
+ * without a Polar customer row yet can still upgrade normally. This mirrors
+ * the plugin's own proven list-then-create-or-update logic, just as a
+ * swallow-and-log step that can never block account creation -- same
+ * best-effort posture as cleanupUserFiles/cleanupAiAssets/cleanupAvatar
+ * above. */
+async function createPolarCustomerBestEffort(user: { id: string; email: string; name: string }): Promise<void> {
+  try {
+    const { result } = await polarClient.customers.list({ email: user.email });
+    const existing = result.items[0];
+    if (!existing) {
+      await polarClient.customers.create({ email: user.email, name: user.name, externalId: user.id });
+    } else if (existing.externalId !== user.id) {
+      await polarClient.customers.update({ id: existing.id, customerUpdate: { externalId: user.id } });
+    }
+  } catch (error) {
+    console.error("Polar customer creation failed (non-blocking):", error);
+  }
+}
+
+/** Best-effort Polar customer email/name sync on user update (e.g. the
+ * change-email flow) -- replaces the plugin's own `update.after` hook, which
+ * is gated behind the same `createCustomerOnSignUp` flag we've turned off
+ * above (confirmed by reading the plugin source: all four of its hooks share
+ * that one option), so disabling it silently would have desynced Polar's
+ * customer record from real account changes going forward. */
+async function updatePolarCustomerBestEffort(user: { id: string; email: string; name: string }): Promise<void> {
+  try {
+    await polarClient.customers.updateExternal({
+      externalId: user.id,
+      customerUpdateExternalID: { email: user.email, name: user.name },
+    });
+  } catch (error) {
+    console.error("Polar customer update failed (non-blocking):", error);
+  }
+}
+
+/** Best-effort Polar customer deletion on account deletion -- replaces the
+ * plugin's own `delete.after` hook (same reasoning as
+ * updatePolarCustomerBestEffort above). Without this, deleting a CreatorOS
+ * account would leave an orphaned Polar customer record behind -- the same
+ * class of gap the Cloudinary asset cleanup in cleanupAiAssets/cleanupAvatar
+ * was written to close for storage, just for billing data instead. */
+async function deletePolarCustomerBestEffort(userId: string): Promise<void> {
+  try {
+    await polarClient.customers.deleteExternal({ externalId: userId });
+  } catch (error) {
+    console.error("Polar customer delete failed (non-blocking):", error);
+  }
+}
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "pg",
@@ -97,6 +158,7 @@ export const auth = betterAuth({
         await cleanupUserFiles(user.id);
         await cleanupAiAssets(user.id);
         await cleanupAvatar(user.image);
+        await deletePolarCustomerBestEffort(user.id);
       },
     },
   },
@@ -131,6 +193,12 @@ export const auth = betterAuth({
           // Covers both email/password and Google OAuth signups -- both
           // create a `user` row through this same hook.
           await initCreditAccountForNewUser(user.id);
+          await createPolarCustomerBestEffort(user);
+        },
+      },
+      update: {
+        after: async (user) => {
+          await updatePolarCustomerBestEffort(user);
         },
       },
     },
@@ -173,7 +241,11 @@ export const auth = betterAuth({
     tanstackStartCookies(),
     polar({
       client: polarClient,
-      createCustomerOnSignUp: true,
+      // false, not true: see createPolarCustomerBestEffort above for why --
+      // the plugin's own createCustomerOnSignUp throws a raw, signup-
+      // blocking 500 on any Polar-side failure. We create the customer
+      // ourselves, best-effort, from our own after-create hook instead.
+      createCustomerOnSignUp: false,
       use: [
         checkout({
           products: [

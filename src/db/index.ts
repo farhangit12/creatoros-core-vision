@@ -21,6 +21,7 @@ const pool = new Pool({
   connectionString: hyperdrive?.connectionString ?? process.env["DATABASE_URL"],
   max: 5,
   idleTimeoutMillis: 10_000,
+  connectionTimeoutMillis: 5_000,
 });
 
 export const db = drizzle(pool, { schema });

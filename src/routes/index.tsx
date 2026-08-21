@@ -13,6 +13,7 @@ import {
 import { PublicNav } from "@/components/public/public-nav";
 import { PublicFooter } from "@/components/public/public-footer";
 import { Button } from "@/components/ui/button";
+import { canonicalLinks } from "@/lib/canonical";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -29,6 +30,7 @@ export const Route = createFileRoute("/")({
         content: "Everything you create. One workspace.",
       },
     ],
+    links: canonicalLinks("/"),
   }),
   component: Landing,
 });

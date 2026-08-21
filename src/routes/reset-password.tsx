@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
+import { canonicalLinks } from "@/lib/canonical";
 
 const searchSchema = z.object({
   token: z.string().optional(),
@@ -28,6 +29,7 @@ export const Route = createFileRoute("/reset-password")({
         content: "Set a new password for CreatorOS AI.",
       },
     ],
+    links: canonicalLinks("/reset-password"),
   }),
   component: ResetPasswordPage,
 });

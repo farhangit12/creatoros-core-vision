@@ -43,6 +43,25 @@ Checks `/`, `/login`, `/privacy`, `/api/health`, and
 `/api/auth/get-session` each return their expected status code. Exits
 non-zero on any failure, so it's CI/script-friendly.
 
+## Static asset caching
+
+Already handled automatically by the build tooling — no config needed here.
+Nitro's Cloudflare-module build step writes `.output/public/_headers` with a
+`cache-control: public, max-age=31536000, immutable` rule for every hashed
+`/assets/*` file (JS/CSS), and auto-generates the `ASSETS` binding in the
+built `wrangler.json` from `wrangler.jsonc` at build time — nothing to add to
+`wrangler.jsonc` by hand. Confirm after any build with
+`cat .output/public/_headers`, and after a deploy with
+`curl -sI https://<worker>.workers.dev/assets/<a-real-hashed-file>.js`
+(expect the header above). This app is fully SSR'd (no prerendered `.html`
+files ship in `.output/public`), so every page request falls through to the
+Worker's `fetch()` handler in `src/server.ts` regardless — that handler
+deliberately sets no `Cache-Control` of its own, so dynamic HTML responses
+are never cached at the edge. Don't add asset-cache config to
+`security-headers.ts`/`server.ts` — it wouldn't apply to hashed assets
+anyway (they never reach that code path) and risks the CSP-hydration class
+of regression documented elsewhere in this project's history.
+
 ## Database migrations
 
 Standing policy (also in CLAUDE.md — this section formalizes it, doesn't
