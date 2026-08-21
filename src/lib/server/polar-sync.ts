@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { creditLedger, userCredits } from "@/db/schema";
 import { PLANS, type PlanId } from "@/lib/credits";
 import { polarClient, POLAR_PRODUCT_TO_PLAN } from "@/lib/server/polar-client";
+import { recordAuditEvent } from "@/lib/server/audit-log";
 
 /**
  * The only place that writes Polar-derived subscription state into our own
@@ -35,24 +36,29 @@ export async function syncPolarSubscriptionState(userId: string): Promise<void> 
     // gating and the daily cap key off planId alone, so this takes effect
     // immediately.
     const wasPaid = account.planId !== "free";
-    await db
-      .update(userCredits)
-      .set({
-        polarCustomerId: state.id,
-        polarSubscriptionId: null,
-        subscriptionStatus: null,
-        updatedAt: new Date(),
-        ...(wasPaid ? { planId: "free" satisfies PlanId } : {}),
-      })
-      .where(eq(userCredits.userId, userId));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(userCredits)
+        .set({
+          polarCustomerId: state.id,
+          polarSubscriptionId: null,
+          subscriptionStatus: null,
+          updatedAt: new Date(),
+          ...(wasPaid ? { planId: "free" satisfies PlanId } : {}),
+        })
+        .where(eq(userCredits.userId, userId));
+      if (wasPaid) {
+        await tx.insert(creditLedger).values({
+          id: crypto.randomUUID(),
+          userId,
+          delta: 0,
+          reason: "plan_downgraded",
+          balanceAfter: account.balance,
+        });
+      }
+    });
     if (wasPaid) {
-      await db.insert(creditLedger).values({
-        id: crypto.randomUUID(),
-        userId,
-        delta: 0,
-        reason: "plan_downgraded",
-        balanceAfter: account.balance,
-      });
+      await recordAuditEvent({ userId, event: "plan_downgraded", metadata: { from: account.planId } });
     }
     return;
   }
@@ -74,25 +80,28 @@ export async function syncPolarSubscriptionState(userId: string): Promise<void> 
 
   if (isNewGrant) {
     const newBalance = plan.unlimited ? account.balance : plan.monthlyCredits;
-    await db
-      .update(userCredits)
-      .set({
-        planId,
-        balance: newBalance,
-        renewsAt: activeSubscription.currentPeriodEnd,
-        polarCustomerId: state.id,
-        polarSubscriptionId: activeSubscription.id,
-        subscriptionStatus,
-        updatedAt: new Date(),
-      })
-      .where(eq(userCredits.userId, userId));
-    await db.insert(creditLedger).values({
-      id: crypto.randomUUID(),
-      userId,
-      delta: plan.unlimited ? 0 : plan.monthlyCredits - account.balance,
-      reason: "subscription_granted",
-      balanceAfter: newBalance,
+    await db.transaction(async (tx) => {
+      await tx
+        .update(userCredits)
+        .set({
+          planId,
+          balance: newBalance,
+          renewsAt: activeSubscription.currentPeriodEnd,
+          polarCustomerId: state.id,
+          polarSubscriptionId: activeSubscription.id,
+          subscriptionStatus,
+          updatedAt: new Date(),
+        })
+        .where(eq(userCredits.userId, userId));
+      await tx.insert(creditLedger).values({
+        id: crypto.randomUUID(),
+        userId,
+        delta: plan.unlimited ? 0 : plan.monthlyCredits - account.balance,
+        reason: "subscription_granted",
+        balanceAfter: newBalance,
+      });
     });
+    await recordAuditEvent({ userId, event: "plan_granted", metadata: { planId } });
     return;
   }
 

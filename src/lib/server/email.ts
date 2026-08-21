@@ -95,6 +95,67 @@ function buildChangeEmailVerificationHtml(params: { name: string; url: string })
   `;
 }
 
+function buildFeedbackEmailHtml(params: {
+  fromName: string;
+  fromEmail: string;
+  route: string;
+  message: string;
+}): string {
+  const safeName = escapeHtml(params.fromName || "there");
+  const safeEmail = escapeHtml(params.fromEmail);
+  const safeRoute = escapeHtml(params.route);
+  const safeMessage = escapeHtml(params.message).replace(/\n/g, "<br />");
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 520px; margin: 0 auto; color: #111827;">
+      <p style="font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: #6b7280; margin: 0 0 24px;">CreatorOS &middot; In-app feedback</p>
+      <p style="font-size: 14px; line-height: 1.6; color: #374151; margin: 0 0 16px;">
+        From <strong>${safeName}</strong> (${safeEmail}), sent from <code>${safeRoute}</code>.
+      </p>
+      <div style="font-size: 14px; line-height: 1.6; color: #111827; background: #f3f4f6; border-radius: 8px; padding: 16px; white-space: pre-wrap;">
+        ${safeMessage}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Sends an in-app feedback/bug-report submission to the support inbox via
+ * the same Resend REST call every other transactional email in this file
+ * uses. No new provider, no new env var -- reuses RESEND_API_KEY.
+ */
+export async function sendFeedbackEmail(params: {
+  fromName: string;
+  fromEmail: string;
+  route: string;
+  message: string;
+}): Promise<void> {
+  const apiKey = process.env["RESEND_API_KEY"];
+  const supportAddress = process.env["SUPPORT_EMAIL"] || "edev351@gmail.com";
+  if (!apiKey) {
+    throw new Error("RESEND_API_KEY is not configured.");
+  }
+
+  const response = await fetch(RESEND_API_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: FROM_ADDRESS,
+      to: supportAddress,
+      reply_to: params.fromEmail,
+      subject: `CreatorOS feedback from ${params.fromName}`,
+      html: buildFeedbackEmailHtml(params),
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Resend request failed (${response.status}): ${body}`);
+  }
+}
+
 export async function sendChangeEmailVerification(params: {
   to: string;
   name: string;

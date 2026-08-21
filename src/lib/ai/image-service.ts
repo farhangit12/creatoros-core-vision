@@ -1,7 +1,13 @@
 import { getImageProvider, resolveOperation } from "./registry";
 import { usageLogger } from "./usage";
+import { withTimeout } from "./router";
 import type { GenerationRecord, ImageAsset, ThumbnailVariation } from "./types";
 import type { ImageProviderAsset } from "./providers/types";
+
+// Longer than the text router's timeout -- image/thumbnail generation
+// (Cloudflare Workers AI, possibly batched via Promise.all for multiple
+// variants) is legitimately slower than a single text completion.
+const IMAGE_PROVIDER_TIMEOUT_MS = 90_000;
 
 function toImageAsset(asset: ImageProviderAsset): ImageAsset {
   return {
@@ -49,17 +55,21 @@ export async function generateImages(params: GenerateImagesParams): Promise<Gene
   });
 
   try {
-    const result = await getImageProvider("image.generate").generate({
-      operation: "image.generate",
-      model,
-      prompt: params.prompt,
-      count: params.count,
-      aspectRatio: params.aspectRatio,
-      style: params.style,
-      metadata: { useCase: params.useCase, platform: params.platform },
-      ...(params.referenceImageUrl !== undefined ? { sourceAssetUrl: params.referenceImageUrl } : {}),
-      ...(params.overlayText !== undefined ? { overlayText: params.overlayText } : {}),
-    });
+    const result = await withTimeout(
+      getImageProvider("image.generate").generate({
+        operation: "image.generate",
+        model,
+        prompt: params.prompt,
+        count: params.count,
+        aspectRatio: params.aspectRatio,
+        style: params.style,
+        metadata: { useCase: params.useCase, platform: params.platform },
+        ...(params.referenceImageUrl !== undefined ? { sourceAssetUrl: params.referenceImageUrl } : {}),
+        ...(params.overlayText !== undefined ? { overlayText: params.overlayText } : {}),
+      }),
+      IMAGE_PROVIDER_TIMEOUT_MS,
+      "cloudflare/image.generate",
+    );
     const assets = result.assets.map(toImageAsset);
     const completed = usageLogger.complete(generation.id, { output: assets });
     return { assets, generation: completed };
@@ -105,16 +115,20 @@ export async function generateThumbnails(params: GenerateThumbnailsParams): Prom
   });
 
   try {
-    const result = await getImageProvider("thumbnail.generate").generate({
-      operation: "thumbnail.generate",
-      model,
-      prompt: params.topic,
-      count: params.count,
-      aspectRatio: params.aspectRatio,
-      style: params.style,
-      metadata: { platform: params.platform },
-      ...(params.referenceImageUrl !== undefined ? { sourceAssetUrl: params.referenceImageUrl } : {}),
-    });
+    const result = await withTimeout(
+      getImageProvider("thumbnail.generate").generate({
+        operation: "thumbnail.generate",
+        model,
+        prompt: params.topic,
+        count: params.count,
+        aspectRatio: params.aspectRatio,
+        style: params.style,
+        metadata: { platform: params.platform },
+        ...(params.referenceImageUrl !== undefined ? { sourceAssetUrl: params.referenceImageUrl } : {}),
+      }),
+      IMAGE_PROVIDER_TIMEOUT_MS,
+      "cloudflare/thumbnail.generate",
+    );
     const variations: ThumbnailVariation[] = result.assets.map((asset, i) => ({
       id: crypto.randomUUID(),
       label: `Variation ${THUMBNAIL_LABELS[i] ?? String(i + 1)}`,
@@ -163,15 +177,19 @@ export async function createVariation(params: CreateVariationParams): Promise<Cr
   });
 
   try {
-    const result = await getImageProvider("image.variation").generate({
-      operation: "image.variation",
-      model,
-      prompt: params.prompt ?? "",
-      count: params.count ?? 1,
-      aspectRatio: params.aspectRatio,
-      sourceAssetId: params.sourceAssetId,
-      ...(params.sourceAssetUrl !== undefined ? { sourceAssetUrl: params.sourceAssetUrl } : {}),
-    });
+    const result = await withTimeout(
+      getImageProvider("image.variation").generate({
+        operation: "image.variation",
+        model,
+        prompt: params.prompt ?? "",
+        count: params.count ?? 1,
+        aspectRatio: params.aspectRatio,
+        sourceAssetId: params.sourceAssetId,
+        ...(params.sourceAssetUrl !== undefined ? { sourceAssetUrl: params.sourceAssetUrl } : {}),
+      }),
+      IMAGE_PROVIDER_TIMEOUT_MS,
+      "cloudflare/image.variation",
+    );
     const assets = result.assets.map(toImageAsset);
     const completed = usageLogger.complete(generation.id, { output: assets });
     return { assets, generation: completed };

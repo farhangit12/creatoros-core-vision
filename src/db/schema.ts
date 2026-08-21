@@ -1,4 +1,4 @@
-import { boolean, index, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -52,6 +52,24 @@ export const verification = pgTable("verification", {
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull(),
 });
+
+// better-auth's own DB-backed rate-limit storage (createDatabaseStorageWrapper
+// in node_modules/better-auth/node_modules/@better-auth/core/dist/context/...).
+// Exact field contract per @better-auth/core's rate-limit schema (key/count/
+// lastRequest, plus the same `id` primary key every other better-auth table
+// here has). This replaces the in-memory rate-limit storage, which doesn't
+// enforce correctly across Cloudflare Workers' distributed isolates -- see
+// src/lib/auth.ts's `rateLimit: { storage: "database" }`.
+export const rateLimit = pgTable(
+  "rateLimit",
+  {
+    id: text("id").primaryKey(),
+    key: text("key").notNull(),
+    count: integer("count").notNull(),
+    lastRequest: bigint("lastRequest", { mode: "number" }).notNull(),
+  },
+  (table) => [index("rateLimit_key_idx").on(table.key)],
+);
 
 export const auditLog = pgTable("audit_log", {
   id: text("id").primaryKey(),

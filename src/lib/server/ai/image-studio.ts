@@ -11,6 +11,7 @@ import { uploadImageToCloudinary } from "@/lib/ai/providers/image/cloudinary-upl
 import { checkAndReserveCredits, checkGlobalImageCapacity, deductCredits, getOrInitCreditAccount } from "@/lib/server/credits";
 import { imageCost, type PlanId } from "@/lib/credits";
 import { BatchLimitExceededError, FeatureNotAvailableError, hasFeature, maxImageBatch } from "@/lib/plan-features";
+import { assertNotDuplicateSubmission } from "@/lib/server/ai/idempotency";
 import type { GenerationRecord, ImageAsset } from "@/lib/ai/types";
 import type { ImageOperation } from "@/lib/ai/operations";
 
@@ -207,6 +208,12 @@ export const generateImageAction = createServerFn({ method: "POST" })
       ...(referenceImageUrl !== undefined ? { referenceImageUrl } : {}),
       ...(overlayText !== undefined ? { overlayText } : {}),
     };
+    await assertNotDuplicateSubmission({
+      userId,
+      feature: "image-studio",
+      operation: "image.generate",
+      clientData: input,
+    });
 
     try {
       const result = await generateImages({
@@ -249,6 +256,12 @@ export const createImageVariationAction = createServerFn({ method: "POST" })
       ...(prompt !== undefined ? { prompt } : {}),
       ...(count !== undefined ? { count } : {}),
     };
+    await assertNotDuplicateSubmission({
+      userId,
+      feature: "image-studio",
+      operation: "image.variation",
+      clientData: input,
+    });
 
     try {
       const result = await createVariation({

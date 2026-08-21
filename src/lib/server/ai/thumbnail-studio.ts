@@ -10,6 +10,7 @@ import { resolveOperation } from "@/lib/ai/registry";
 import { checkAndReserveCredits, checkGlobalImageCapacity, deductCredits, getOrInitCreditAccount } from "@/lib/server/credits";
 import { imageCost, type PlanId } from "@/lib/credits";
 import { BatchLimitExceededError, FeatureNotAvailableError, hasFeature, maxThumbnailBatch } from "@/lib/plan-features";
+import { assertNotDuplicateSubmission } from "@/lib/server/ai/idempotency";
 import type { GenerationRecord, ThumbnailVariation } from "@/lib/ai/types";
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
@@ -152,6 +153,12 @@ export const generateThumbnailAction = createServerFn({ method: "POST" })
       ...(platform !== undefined ? { platform } : {}),
       ...(referenceImageUrl !== undefined ? { referenceImageUrl } : {}),
     };
+    await assertNotDuplicateSubmission({
+      userId,
+      feature: "thumbnail-studio",
+      operation: "thumbnail.generate",
+      clientData: input,
+    });
 
     try {
       const result = await generateThumbnails({

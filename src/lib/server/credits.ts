@@ -73,19 +73,24 @@ async function loadOrCreateAccount(userId: string): Promise<CreditAccountRecord>
     return existing;
   }
   const plan = PLANS.free;
-  const [created] = await db
-    .insert(userCredits)
-    .values({ userId, planId: plan.id, balance: plan.monthlyCredits, renewsAt: addMonths(new Date(), 1) })
-    .onConflictDoNothing()
-    .returning();
+  const created = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(userCredits)
+      .values({ userId, planId: plan.id, balance: plan.monthlyCredits, renewsAt: addMonths(new Date(), 1) })
+      .onConflictDoNothing()
+      .returning();
+    if (row) {
+      await tx.insert(creditLedger).values({
+        id: crypto.randomUUID(),
+        userId,
+        delta: plan.monthlyCredits,
+        reason: "signup_bonus",
+        balanceAfter: plan.monthlyCredits,
+      });
+    }
+    return row;
+  });
   if (created) {
-    await db.insert(creditLedger).values({
-      id: crypto.randomUUID(),
-      userId,
-      delta: plan.monthlyCredits,
-      reason: "signup_bonus",
-      balanceAfter: plan.monthlyCredits,
-    });
     return created;
   }
   // Lost a create race to a concurrent request -- reread the row it created.
@@ -108,20 +113,22 @@ async function applyMonthlyResetIfDue(account: CreditAccountRecord): Promise<Cre
     return account;
   }
   const plan = PLANS[account.planId as PlanId] ?? PLANS.free;
-  const [updated] = await db
-    .update(userCredits)
-    .set({ balance: plan.monthlyCredits, renewsAt: addMonths(new Date(), 1), updatedAt: new Date() })
-    .where(eq(userCredits.userId, account.userId))
-    .returning();
-  const finalRow = updated ?? account;
-  await db.insert(creditLedger).values({
-    id: crypto.randomUUID(),
-    userId: account.userId,
-    delta: plan.monthlyCredits - account.balance,
-    reason: "monthly_reset",
-    balanceAfter: finalRow.balance,
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(userCredits)
+      .set({ balance: plan.monthlyCredits, renewsAt: addMonths(new Date(), 1), updatedAt: new Date() })
+      .where(eq(userCredits.userId, account.userId))
+      .returning();
+    const finalRow = updated ?? account;
+    await tx.insert(creditLedger).values({
+      id: crypto.randomUUID(),
+      userId: account.userId,
+      delta: plan.monthlyCredits - account.balance,
+      reason: "monthly_reset",
+      balanceAfter: finalRow.balance,
+    });
+    return finalRow;
   });
-  return finalRow;
 }
 
 /** Lazy-reset-aware balance getter -- no cron needed. Every read checks
@@ -219,21 +226,23 @@ export async function deductCredits(params: {
     return;
   }
 
-  const [updated] = await db
-    .update(userCredits)
-    .set({ balance: sql`${userCredits.balance} - ${params.cost}`, updatedAt: new Date() })
-    .where(and(eq(userCredits.userId, params.userId), gte(userCredits.balance, params.cost)))
-    .returning();
-  if (!updated) {
-    throw new InsufficientCreditsError(params.cost, 0);
-  }
-  await db.insert(creditLedger).values({
-    id: crypto.randomUUID(),
-    userId: params.userId,
-    delta: -params.cost,
-    reason: "ai_generation",
-    generationId: params.generationId,
-    balanceAfter: updated.balance,
+  await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(userCredits)
+      .set({ balance: sql`${userCredits.balance} - ${params.cost}`, updatedAt: new Date() })
+      .where(and(eq(userCredits.userId, params.userId), gte(userCredits.balance, params.cost)))
+      .returning();
+    if (!updated) {
+      throw new InsufficientCreditsError(params.cost, 0);
+    }
+    await tx.insert(creditLedger).values({
+      id: crypto.randomUUID(),
+      userId: params.userId,
+      delta: -params.cost,
+      reason: "ai_generation",
+      generationId: params.generationId,
+      balanceAfter: updated.balance,
+    });
   });
 }
 

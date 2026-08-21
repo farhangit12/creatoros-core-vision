@@ -106,9 +106,33 @@ function TermsPage() {
 
           <Section title="Plans and billing">
             <p>
-              CreatorOS is currently available under the terms presented at
-              sign-up. If paid plans are introduced, their pricing and
-              billing terms will be presented before you're charged.
+              CreatorOS offers a free plan and paid Pro and Scale plans.
+              Paid plans are billed monthly through Polar.sh, our Merchant
+              of Record, who processes your payment and handles applicable
+              tax. Pricing and billing terms are always shown before you're
+              charged. You can upgrade, downgrade, or cancel a paid plan at
+              any time from Billing — cancellation stops future charges but
+              doesn't retroactively refund the current billing period unless
+              required by law.
+            </p>
+          </Section>
+
+          <Section title="Refunds and disputes">
+            <p>
+              Paid subscriptions don't include a general right to a refund
+              for a partial billing period, except where required by law —
+              see "Plans and billing" above. If you believe you were charged
+              in error, contact us at{" "}
+              <a
+                href="mailto:edev351@gmail.com"
+                className="text-accent-brand hover:underline"
+              >
+                edev351@gmail.com
+              </a>{" "}
+              and we'll look into it. Because Polar.sh processes your
+              payment as our Merchant of Record, payment disputes and
+              chargebacks may also be handled directly through Polar in
+              accordance with their own terms.
             </p>
           </Section>
 

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      # `npm run lint` is deliberately not run here: this repo has
+      # pre-existing CRLF line endings across essentially every file
+      # (confirmed via `git diff` on an untouched file -- zero diff, so this
+      # predates any change made in this pass), which prettier's LF
+      # expectation flags repo-wide. Every prior verified phase in this
+      # project has used tsc+build as the bar, never lint, for the same
+      # reason. Fixing line endings project-wide is a separate, larger,
+      # deliberate decision -- not bundled into this pass.

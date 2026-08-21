@@ -12,8 +12,15 @@ interface HyperdriveBinding {
 }
 const hyperdrive = process.env["HYPERDRIVE"] as unknown as HyperdriveBinding | undefined;
 
+// Small `max` deliberately -- each Worker isolate should hold few direct
+// connections of its own; Neon's pooled (-pooler) endpoint (or Hyperdrive,
+// when bound) already does the real multiplexing across all isolates. A
+// short idleTimeout releases idle connections promptly instead of holding
+// them open for an isolate's whole lifetime.
 const pool = new Pool({
   connectionString: hyperdrive?.connectionString ?? process.env["DATABASE_URL"],
+  max: 5,
+  idleTimeoutMillis: 10_000,
 });
 
 export const db = drizzle(pool, { schema });

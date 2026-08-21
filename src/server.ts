@@ -3,6 +3,10 @@ import "./lib/error-capture";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 import { auth } from "./lib/auth";
+import { applySecurityHeaders } from "./lib/server/security-headers";
+import { logger } from "./lib/server/logger";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -29,7 +33,7 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   const body = await response.clone().text();
   if (!isH3SwallowedErrorBody(body)) return response;
 
-  console.error(consumeLastCapturedError() ?? new Error(`h3 swallowed SSR error: ${body}`));
+  logger.error("h3 swallowed SSR error", undefined, consumeLastCapturedError() ?? new Error(`h3 swallowed SSR error: ${body}`));
   return new Response(renderErrorPage(), {
     status: 500,
     headers: { "content-type": "text/html; charset=utf-8" },
@@ -71,27 +75,65 @@ function restoreCloudflareEnv(request: Request, fallback: unknown): unknown {
   return fallback;
 }
 
+/** Real DB connectivity check -- used by GET /api/health. A trivial SELECT 1
+ * is enough to prove the Worker can actually reach the database, not just
+ * that the process is running. */
+async function checkHealth(): Promise<Response> {
+  try {
+    await db.execute(sql`SELECT 1`);
+    return new Response(JSON.stringify({ status: "ok" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  } catch (error) {
+    logger.error("Health check DB connectivity failed", undefined, error);
+    return new Response(JSON.stringify({ status: "error" }), {
+      status: 503,
+      headers: { "content-type": "application/json" },
+    });
+  }
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
+    const requestId = crypto.randomUUID();
     // Use the restored value (not the incoming `env`, which is always
     // `undefined` by the time this function is called -- see comment above)
     // for every downstream call too. TanStack's own server-entry does its
     // own `globalThis.__env__ = env` bookkeeping internally, and passing it
     // the still-broken original `env` would immediately clobber the fix.
     const realEnv = restoreCloudflareEnv(request, env);
-    if (new URL(request.url).pathname.startsWith("/api/auth")) {
-      return auth.handler(request);
-    }
-    try {
-      const handler = await getServerEntry();
-      const response = await handler.fetch(request, realEnv, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
-    } catch (error) {
-      console.error(error);
-      return new Response(renderErrorPage(), {
-        status: 500,
-        headers: { "content-type": "text/html; charset=utf-8" },
-      });
-    }
+    const pathname = new URL(request.url).pathname;
+
+    const response = await handleRequest(request, realEnv, ctx, pathname, requestId);
+    const withSecurityHeaders = await applySecurityHeaders(response);
+    withSecurityHeaders.headers.set("X-Request-Id", requestId);
+    return withSecurityHeaders;
   },
 };
+
+async function handleRequest(
+  request: Request,
+  realEnv: unknown,
+  ctx: unknown,
+  pathname: string,
+  requestId: string,
+): Promise<Response> {
+  if (pathname === "/api/health") {
+    return checkHealth();
+  }
+  if (pathname.startsWith("/api/auth")) {
+    return auth.handler(request);
+  }
+  try {
+    const handler = await getServerEntry();
+    const response = await handler.fetch(request, realEnv, ctx);
+    return await normalizeCatastrophicSsrResponse(response);
+  } catch (error) {
+    logger.error("Unhandled request error", { requestId, pathname }, error);
+    return new Response(renderErrorPage(), {
+      status: 500,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+}

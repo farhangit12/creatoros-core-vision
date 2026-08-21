@@ -50,6 +50,33 @@ export function createUploadSignature(userId: string, folderOverride?: string): 
   return { cloudName, apiKey, timestamp, signature, folder };
 }
 
+/** True only for a URL actually hosted on this account's Cloudinary cloud
+ * name -- used to guard avatar cleanup, since `user.image` can also be a
+ * Google-hosted OAuth profile picture that must never be sent to our own
+ * Cloudinary destroy endpoint. */
+export function isOwnCloudinaryUrl(url: string): boolean {
+  const cloudName = process.env["CLOUDINARY_CLOUD_NAME"];
+  return Boolean(cloudName) && url.includes(`res.cloudinary.com/${cloudName}/`);
+}
+
+// Cloudinary secure_urls from this uploader always look like
+// https://res.cloudinary.com/<cloud>/<type>/upload/[<transformations>/]v<digits>/<folder>/<id>.<ext>
+// -- the public_id is the folder-qualified path with the extension stripped.
+// Same derivation approach already used by the AI image pipeline's own
+// cleanup (src/lib/ai/providers/image/cloudinary-upload.ts), kept as a
+// separate copy here per this module's scope-protection convention rather
+// than importing across the two Cloudinary usages.
+const CLOUDINARY_URL_PUBLIC_ID_PATTERN = /\/upload\/(?:[^/]+\/)*v\d+\/(.+)\.[a-zA-Z0-9]+$/;
+
+/** Deletes a Cloudinary asset given its full secure_url instead of a
+ * separately-stored public_id -- used for the avatar, which has no
+ * dedicated storageKey column. */
+export async function deleteFromCloudinaryByUrl(url: string, resourceType: string): Promise<void> {
+  const publicId = CLOUDINARY_URL_PUBLIC_ID_PATTERN.exec(url)?.[1];
+  if (!publicId) return;
+  await deleteFromCloudinary(publicId, resourceType);
+}
+
 /** Permanently deletes an asset from Cloudinary by its public_id. */
 export async function deleteFromCloudinary(publicId: string, resourceType: string): Promise<void> {
   const { cloudName, apiKey, apiSecret } = getConfig();

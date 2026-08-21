@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
@@ -6,19 +7,15 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { sendChangeEmailVerification, sendPasswordResetEmail } from "@/lib/server/email";
-import { deleteFromCloudinary } from "@/lib/server/files-storage";
+import { deleteFromCloudinary, deleteFromCloudinaryByUrl, isOwnCloudinaryUrl } from "@/lib/server/files-storage";
+import { destroyImageFromCloudinary } from "@/lib/ai/providers/image/cloudinary-upload";
 import { initCreditAccountForNewUser } from "@/lib/server/credits";
 import { polarClient } from "@/lib/server/polar-client";
 import { syncPolarSubscriptionState } from "@/lib/server/polar-sync";
+import { recordAuditEvent } from "@/lib/server/audit-log";
 
-/**
- * Best-effort cleanup of the user's uploaded files on Cloudinary before the
- * account row (and everything FK-cascaded from it) is deleted. Deliberately
- * scoped to user-uploaded files only -- AI-generated images/thumbnails and
- * the avatar have no delete-from-Cloudinary path built anywhere in the app
- * yet, so those become orphaned assets on account deletion (a known,
- * reported limitation, not silently skipped).
- */
+/** Best-effort cleanup of the user's uploaded files on Cloudinary before the
+ * account row (and everything FK-cascaded from it) is deleted. */
 async function cleanupUserFiles(userId: string): Promise<void> {
   const rows = await db
     .select({ storageKey: schema.files.storageKey, resourceType: schema.files.resourceType })
@@ -30,6 +27,41 @@ async function cleanupUserFiles(userId: string): Promise<void> {
     } catch {
       // Best-effort -- an orphaned Cloudinary asset must never block account deletion.
     }
+  }
+}
+
+/** Best-effort cleanup of the user's AI-generated images/thumbnails on
+ * Cloudinary before account deletion -- previously left as orphaned,
+ * indefinitely-billed assets (a known, reported gap). Reuses the AI image
+ * pipeline's own delete-by-URL helper, same one already used for per-
+ * generation deletes (see src/lib/server/ai/ai-usage.ts). */
+async function cleanupAiAssets(userId: string): Promise<void> {
+  const rows = await db
+    .select({ url: schema.aiAssets.url })
+    .from(schema.aiAssets)
+    .where(eq(schema.aiAssets.userId, userId));
+  await Promise.all(
+    rows.map(async (row) => {
+      try {
+        await destroyImageFromCloudinary(row.url);
+      } catch {
+        // Best-effort -- an orphaned Cloudinary asset must never block account deletion.
+      }
+    }),
+  );
+}
+
+/** Best-effort cleanup of the user's avatar on Cloudinary before account
+ * deletion. Only ever attempts deletion for a URL that actually belongs to
+ * this account's Cloudinary cloud name -- `user.image` can also be a
+ * Google-hosted OAuth profile picture, which must never be mistaken for our
+ * own asset and sent to our Cloudinary destroy endpoint. */
+async function cleanupAvatar(image: string | null | undefined): Promise<void> {
+  if (!image || !isOwnCloudinaryUrl(image)) return;
+  try {
+    await deleteFromCloudinaryByUrl(image, "image");
+  } catch {
+    // Best-effort -- an orphaned Cloudinary asset must never block account deletion.
   }
 }
 
@@ -61,7 +93,10 @@ export const auth = betterAuth({
     deleteUser: {
       enabled: true,
       beforeDelete: async (user) => {
+        await recordAuditEvent({ userId: user.id, event: "account_deleted" });
         await cleanupUserFiles(user.id);
+        await cleanupAiAssets(user.id);
+        await cleanupAvatar(user.image);
       },
     },
   },
@@ -102,6 +137,38 @@ export const auth = betterAuth({
   },
   secret: process.env["BETTER_AUTH_SECRET"],
   baseURL: process.env["BETTER_AUTH_URL"],
+  // Explicit instead of relying on the implicit baseURL-only default --
+  // hardens origin/CSRF checking for cookie-based auth.
+  trustedOrigins: process.env["BETTER_AUTH_URL"] ? [process.env["BETTER_AUTH_URL"]] : undefined,
+  // better-auth's default in-memory rate-limit storage doesn't enforce
+  // correctly across Cloudflare Workers' distributed isolates (each isolate
+  // has its own memory) -- "database" uses the new `rateLimit` table
+  // instead (drizzle/0008_rate_limit.sql), so the limit is actually shared
+  // and enforced. `enabled: true` makes this explicit rather than relying
+  // on better-auth's own `isProduction`-derived default. Built-in special
+  // rules already cover /sign-in, /sign-up, /change-password, /change-email
+  // (3 req/10s) and password-reset endpoints (3 req/60s) -- see
+  // node_modules/better-auth/node_modules/@better-auth/core/.../rate-limiter.
+  rateLimit: {
+    enabled: true,
+    storage: "database",
+  },
+  // Best-effort audit trail for the two sensitive self-service account
+  // changes that don't go through the databaseHooks below (password/email
+  // change). Wrapped so a logging failure can never break the real change
+  // it's describing -- recordAuditEvent already swallows its own errors.
+  hooks: {
+    after: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/change-password" && ctx.path !== "/change-email") return;
+      const userId = ctx.context.session?.user?.id ?? ctx.context.newSession?.user?.id;
+      if (!userId) return;
+      await recordAuditEvent({
+        userId,
+        event: ctx.path === "/change-password" ? "password_changed" : "email_change_requested",
+        ...(ctx.request ? { request: ctx.request } : {}),
+      });
+    }),
+  },
   plugins: [
     tanstackStartCookies(),
     polar({

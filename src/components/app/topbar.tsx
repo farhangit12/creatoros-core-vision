@@ -3,6 +3,7 @@ import { Bell, Menu, Search } from "lucide-react";
 import { findNavItem } from "@/lib/navigation";
 import { authClient, useSession } from "@/lib/auth-client";
 import { toAvatarUrl } from "@/lib/files";
+import { FeedbackDialog } from "@/components/app/feedback-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -90,6 +91,8 @@ export function Topbar({
         <Search className="size-[18px]" />
       </button>
 
+      <FeedbackDialog />
+
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label="Notifications"
@@ -145,6 +148,9 @@ export function Topbar({
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link to="/settings">Settings</Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to="/help">Help &amp; FAQ</Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

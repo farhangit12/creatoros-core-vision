@@ -10,6 +10,7 @@ import { resolveOperation } from "@/lib/ai/registry";
 import { checkAndReserveCredits, deductCredits, getOrInitCreditAccount } from "@/lib/server/credits";
 import { scriptGenerateCost, scriptRewriteCost, type PlanId } from "@/lib/credits";
 import { FeatureNotAvailableError, hasFeature } from "@/lib/plan-features";
+import { assertNotDuplicateSubmission } from "@/lib/server/ai/idempotency";
 import type { GenerationRecord } from "@/lib/ai/types";
 import type { TextOperation } from "@/lib/ai/operations";
 
@@ -124,6 +125,12 @@ export const generateScriptAction = createServerFn({ method: "POST" })
     const startedAt = new Date();
     const { conversationId, audience, ...rest } = data;
     const input = { ...rest, ...(audience !== undefined ? { audience } : {}) };
+    await assertNotDuplicateSubmission({
+      userId,
+      feature: "script-studio",
+      operation: "script.generate",
+      clientData: input,
+    });
 
     try {
       const result = await generateScript({
@@ -158,6 +165,12 @@ export const rewriteScriptAction = createServerFn({ method: "POST" })
     await checkAndReserveCredits(userId, cost);
     const startedAt = new Date();
     const { conversationId, tone, ...rest } = data;
+    await assertNotDuplicateSubmission({
+      userId,
+      feature: "script-studio",
+      operation: "script.rewrite",
+      clientData: { ...rest, ...(tone !== undefined ? { tone } : {}) },
+    });
 
     try {
       const result = await rewriteScript({

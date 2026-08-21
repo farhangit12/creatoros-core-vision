@@ -9,7 +9,9 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "smoke-test": "node scripts/smoke-test.mjs",
+    "loadtest": "node scripts/loadtest.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.17.1",
@@ -81,6 +83,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.2.0",
+    "autocannon": "^8.0.0",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.32.0",
     "eslint-config-prettier": "^10.1.1",

@@ -12,3 +12,7 @@ Allow: /
 
 User-agent: *
 Allow: /
+
+# Update to the real production domain once one is configured --
+# see docs/OPERATIONS.md and public/sitemap.xml.
+Sitemap: https://creatoros.example.com/sitemap.xml

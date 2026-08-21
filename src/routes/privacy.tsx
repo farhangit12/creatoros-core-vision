@@ -91,6 +91,7 @@ function PrivacyPage() {
               <li>Cloudflare Workers AI — generates AI images and thumbnails.</li>
               <li>Cloudinary — stores uploaded files and generated images.</li>
               <li>Resend — delivers account emails such as password resets.</li>
+              <li>Polar.sh — processes payments and manages subscriptions for paid plans, as your Merchant of Record.</li>
             </ul>
           </Section>
 
@@ -104,17 +105,20 @@ function PrivacyPage() {
 
           <Section title="Data retention and deletion">
             <p>
-              We keep your data for as long as your account is active. You
-              can delete individual files, projects and generations from
-              within CreatorOS at any time. To request full account
-              deletion, contact us at{" "}
-              <a
-                href="mailto:edev351@gmail.com"
-                className="text-accent-brand hover:underline"
-              >
-                edev351@gmail.com
-              </a>
-              .
+              We keep your account data for as long as your account remains
+              active. You can delete individual files, projects and
+              generations from within CreatorOS at any time, and you can
+              delete your whole account yourself from Settings — full
+              account deletion doesn't require contacting us.
+            </p>
+            <p>
+              Deleting your account is immediate and permanent: your account
+              record, projects, files, chats and AI generations are removed
+              from our live database, and your uploaded files, generated
+              images and thumbnails, and profile photo are removed from our
+              storage provider. A copy may still exist in short-term
+              database backups for a limited window after deletion (up to a
+              few hours) before those backups roll off and are fully purged.
             </p>
           </Section>
 
