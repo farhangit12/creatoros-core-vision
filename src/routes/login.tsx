@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
+import { z } from "zod";
 import { AuthLayout } from "@/components/auth/auth-layout";
 import { GoogleAuthButton } from "@/components/auth/google-auth-button";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,23 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { authClient } from "@/lib/auth-client";
 import { canonicalLinks } from "@/lib/canonical";
 
+// better-auth's own OAuth error codes (see node_modules/better-auth/dist/state.mjs's
+// StateError codes and oauth2/state.mjs's parseState) -- friendlier text for the
+// two shapes actually reproduced live (see auth.ts's onAPIError.errorURL comment
+// and server.ts's OAuth-callback-retry comment for the full incident), honest
+// fallback text for anything else so an unrecognized code never shows a raw
+// machine-readable string to a real user.
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  state_mismatch: "That sign-in link expired or was already used. Please try again.",
+  internal_server_error: "Something went wrong signing you in. Please try again.",
+  account_not_linked: "That Google account isn't linked yet. Try signing in with email/password first.",
+};
+
 export const Route = createFileRoute("/login")({
+  validateSearch: z.object({
+    error: z.string().optional(),
+    error_description: z.string().optional(),
+  }),
   head: () => ({
     meta: [
       { title: "Sign in — CreatorOS AI" },
@@ -32,6 +49,7 @@ export const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const navigate = useNavigate();
+  const search = Route.useSearch();
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
@@ -39,6 +57,18 @@ function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const emailInvalid = email.length > 0 && !email.includes("@");
+
+  // Surfaces a real Google-sign-in failure (redirected here via auth.ts's
+  // onAPIError.errorURL) instead of it silently landing on the homepage with
+  // no explanation -- see auth.ts and server.ts for the full incident this
+  // closes. Runs once on mount; clears the URL param afterward so a page
+  // refresh doesn't keep re-showing a stale error.
+  useEffect(() => {
+    if (!search.error) return;
+    setError(search.error_description ?? OAUTH_ERROR_MESSAGES[search.error] ?? "Sign-in failed. Please try again.");
+    navigate({ to: "/login", search: {}, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.error, search.error_description]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

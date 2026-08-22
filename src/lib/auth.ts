@@ -309,6 +309,19 @@ export const auth = betterAuth({
       },
     },
   },
+  // Without this, any better-auth-level failure (e.g. the OAuth-callback DB
+  // stall documented in server.ts's /api/auth branch) redirects to
+  // better-auth's own default `/api/auth/error` -- which, in production,
+  // itself immediately redirects again to the bare homepage (`/`) with the
+  // error silently sitting in the URL's query string, never shown to the
+  // user (confirmed live: `src/routes/index.tsx` never reads it). Pointing
+  // this at `/login` instead means the failure lands back where the "sign
+  // in with Google" button actually is, and `login.tsx` now reads the
+  // `error`/`error_description` params to show a real, visible message
+  // instead of a silent dead end.
+  onAPIError: {
+    errorURL: "/login",
+  },
   secret: process.env["BETTER_AUTH_SECRET"],
   baseURL: process.env["BETTER_AUTH_URL"],
   // Explicit instead of relying on the implicit baseURL-only default --

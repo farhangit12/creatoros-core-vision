@@ -245,6 +245,34 @@ async function handleRequest(
         throw retryError;
       }
     }
+    // A FOURTH failure shape was live-reproduced on the real Google OAuth
+    // callback (`/api/auth/callback/google`): the same DB stall, this time
+    // hit inside better-auth's OAuth `parseState` step (a `verification`-
+    // table lookup). Here better-auth doesn't return a 500 at all -- it does
+    // a normal 302 redirect to its own `/error` page. A first attempt at
+    // handling this (retrying unconditionally, same as the other GET cases
+    // below) was tried live and made things WORSE, not better: per
+    // `node_modules/better-auth/dist/oauth2/state.mjs`'s `parseGenericState`,
+    // a successful `findVerificationValue` read is immediately followed by
+    // `deleteVerificationByIdentifier` (the one-time login token is
+    // consumed). If our client-side `query_timeout` fires because the
+    // *response* from Postgres was slow to arrive back over
+    // `cloudflare:sockets` -- not because the query itself was actually
+    // slow -- the delete has very likely already happened server-side by
+    // the time we give up waiting. Confirmed live: the retry's second
+    // attempt then failed with a *different*, unrecoverable error
+    // (`state_mismatch` -- "verification not found") instead of the
+    // original, retryable-sounding `internal_server_error`. Unlike the
+    // other GET requests handled below (`get-session`, plain page loads),
+    // this one is NOT safely idempotent despite being a GET, because it
+    // consumes a one-time server-side token as a side effect -- so it's
+    // deliberately excluded from the "retry any GET" logic. If this stall
+    // happens on a real login attempt, the only correct recovery is a fresh
+    // "Continue with Google" click (a brand-new one-time code/token), not
+    // an automatic retry of the same failed request -- see
+    // `google-auth-button.tsx`/`login.tsx`/`auth.ts`'s `onAPIError.errorURL`
+    // for how that failure is now surfaced to the user instead of silently
+    // landing on the bare homepage.
     if (response.status >= 500) {
       const recovered = consumeLastCapturedError();
       // Live reproduction on /api/auth/get-session showed a THIRD failure
@@ -259,12 +287,15 @@ async function handleRequest(
       // which never matches `isRetryableDbError`, so the retry silently
       // never fired for this exact path even with the swallowed-error
       // handling added above. Fixed the same way as the SSR path: GET
-      // requests here (get-session, and any other read-only auth endpoint)
-      // are inherently safe to retry unconditionally on any 500, so they no
-      // longer depend on successfully recovering/pattern-matching the real
-      // error at all. POST/mutating auth requests (sign-up, sign-in, etc.)
-      // keep the narrower, precise-match-only gate, same non-idempotent-risk
-      // reasoning as everywhere else in this file.
+      // requests here (get-session, and any other read-only, side-effect-
+      // free auth endpoint) are inherently safe to retry unconditionally,
+      // so they no longer depend on successfully recovering/pattern-
+      // matching the real error at all. POST/mutating auth requests
+      // (sign-up, sign-in, etc.) keep the narrower, precise-match-only
+      // gate, same non-idempotent-risk reasoning as everywhere else in this
+      // file -- and the OAuth callback above is deliberately excluded from
+      // this branch entirely (it never reaches here, since it fails via a
+      // redirect, not a >=500 status).
       const shouldRetry = request.method === "GET" || isRetryableDbError(recovered);
       if (shouldRetry) {
         logger.warn("Retrying auth.handler after a transient DB error (swallowed)", {
