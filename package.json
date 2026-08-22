@@ -11,7 +11,10 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "smoke-test": "node scripts/smoke-test.mjs",
-    "loadtest": "node scripts/loadtest.mjs"
+    "loadtest": "node scripts/loadtest.mjs",
+    "deploy": "node scripts/deploy.mjs",
+    "tail": "node scripts/tail.mjs",
+    "wrangler": "node scripts/wrangler.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.17.1",

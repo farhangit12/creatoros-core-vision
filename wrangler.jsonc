@@ -26,6 +26,22 @@
     }
   ],
 
+  // Backs better-auth's rate limiter instead of the `rateLimit` Postgres
+  // table (see src/lib/auth.ts's `rateLimitCustomStorage`). Root-caused live
+  // (wrangler tail, real reproduction) that the rate limiter's own DB read
+  // was the single most frequent trigger of an intermittent
+  // `cloudflare:sockets`-to-Neon connection stall that could eventually
+  // freeze the whole Worker (CLAUDE.md's "Final Handover Push" section) --
+  // moving it to KV, a completely different Cloudflare-native binding with
+  // no persistent socket involved, removes that trigger from nearly every
+  // auth request. Created via `wrangler kv namespace create RATE_LIMIT_KV`.
+  "kv_namespaces": [
+    {
+      "binding": "RATE_LIMIT_KV",
+      "id": "2bc8957974054daabde08437bdf0e4ac"
+    }
+  ],
+
   // ASCEND A2-C: code that imports `process` via the bare "node:process"
   // specifier (e.g. src/db/index.ts's compiled chunk) resolves to workerd's
   // own NATIVE process implementation under `nodejs_compat` -- a separate
