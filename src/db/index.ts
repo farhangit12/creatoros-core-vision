@@ -2,29 +2,6 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "./schema";
 
-// On the deployed Worker, `process.env` is a proxy over the raw Cloudflare
-// binding object (see node_modules/unenv's process/env.mjs), so a Hyperdrive
-// binding shows up here as an object, not a string -- unlike every other env
-// var. Locally there's no such binding, so this is always undefined and
-// DATABASE_URL is used exactly as before (ASCEND A2-B).
-//
-// A same-day investigation attempted to read this binding off
-// `globalThis.__env__` instead (since `process.env["HYPERDRIVE"]` reads as
-// `undefined` in practice -- `nodejs_compat_populate_process_env` only
-// populates plain STRING bindings, and Hyperdrive is an object binding) to
-// get Hyperdrive's connection pooling actually in use. That attempt was
-// reverted: touching the raw Cloudflare env object this way (specifically,
-// enumerating/reading properties on it outside its one expected access
-// pattern) tripped a real Workers-runtime restriction in production --
-// "Disallowed operation called within global scope" -- which took the whole
-// site down (every route 500'd, not just this file). Root cause not fully
-// isolated before reverting; revisit only with extreme care and thorough
-// live verification before ever redeploying a variant of this again.
-interface HyperdriveBinding {
-  connectionString: string;
-}
-const hyperdrive = process.env["HYPERDRIVE"] as unknown as HyperdriveBinding | undefined;
-
 // `query_timeout` (client-side, a plain `setTimeout` armed when the query is
 // submitted -- see node_modules/pg/lib/client.js -- independent of whatever
 // the socket layer is doing) bounds an individual query once a connection is
@@ -57,7 +34,7 @@ const hyperdrive = process.env["HYPERDRIVE"] as unknown as HyperdriveBinding | u
 // cover the original cascading-exhaustion risk on their own -- the near-zero
 // value was a workaround for a problem those two now solve more directly.
 const pool = new Pool({
-  connectionString: hyperdrive?.connectionString ?? process.env["DATABASE_URL"],
+  connectionString: process.env["DATABASE_URL"],
   max: 5,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,

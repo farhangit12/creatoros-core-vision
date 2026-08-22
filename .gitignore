@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 .output
+.vercel
 .vinxi
 .tanstack/**
 .nitro
@@ -43,3 +44,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.env*

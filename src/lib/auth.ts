@@ -13,7 +13,6 @@ import { initCreditAccountForNewUser } from "@/lib/server/credits";
 import { polarClient } from "@/lib/server/polar-client";
 import { syncPolarSubscriptionState } from "@/lib/server/polar-sync";
 import { recordAuditEvent } from "@/lib/server/audit-log";
-import { executionContextStorage } from "@/lib/server/execution-context";
 
 /** Best-effort cleanup of the user's uploaded files on Cloudinary before the
  * account row (and everything FK-cascaded from it) is deleted. */
@@ -65,86 +64,6 @@ async function cleanupAvatar(image: string | null | undefined): Promise<void> {
     // Best-effort -- an orphaned Cloudinary asset must never block account deletion.
   }
 }
-
-/** Minimal shape of a Cloudflare KV namespace binding -- avoids pulling in
- * @cloudflare/workers-types just for this. */
-interface KvNamespaceLike {
-  get(key: string): Promise<string | null>;
-  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
-  delete(key: string): Promise<void>;
-}
-
-/** Same `process.env`-as-a-proxy-over-the-real-Cloudflare-binding mechanism
- * already used for HYPERDRIVE (src/db/index.ts) -- but unlike that module,
- * this is read fresh on every call (inside each secondaryStorage method, at
- * actual request time), not once at module-load time, so it doesn't need
- * src/db/index.ts's lazy-construction workaround: by the time better-auth
- * ever calls into this, server.ts's restoreCloudflareEnv() has already run
- * for the current request. Undefined locally (no such binding in dev) --
- * every method below silently no-ops in that case, which is fine since
- * rate-limiting is a hardening feature, not a correctness dependency. */
-function getRateLimitKv(): KvNamespaceLike | undefined {
-  return process.env["RATE_LIMIT_KV"] as unknown as KvNamespaceLike | undefined;
-}
-
-interface RateLimitRecord {
-  key: string;
-  count: number;
-  lastRequest: number;
-}
-
-/** Backs better-auth's rate limiter via Cloudflare KV instead of the
- * `rateLimit` Postgres table, using the `rateLimit.customStorage` extension
- * point specifically (not the global `secondaryStorage` option). That
- * distinction matters: `customStorage` is scoped to rate-limiting only,
- * checked before `secondaryStorage` is even considered (see
- * node_modules/better-auth/dist/api/rate-limiter/index.mjs's
- * `getRateLimitStorage`) -- whereas setting the global `secondaryStorage`
- * option silently also moves *session* storage off Postgres by default
- * (node_modules/better-auth/dist/db/internal-adapter.mjs's
- * `databaseStoresSessions`), which was never the intent here and would have
- * been a much bigger, unreviewed change to session listing/revocation.
- *
- * Root-caused live (wrangler tail against real production traffic) that the
- * rate limiter's own DB read/write was the single most frequent DB round-
- * trip on every auth-touching request, and the most common trigger of an
- * intermittent `cloudflare:sockets`-to-Neon connection stall that could
- * eventually freeze the whole Worker -- see CLAUDE.md's "Final Handover
- * Push" section for the full investigation. KV is a completely different
- * Cloudflare-native binding (HTTP-based, no persistent socket, no cross-
- * request connection-reuse concerns), so it doesn't share that failure
- * mode.
- *
- * Only `get`/`set` are implemented, not the optional atomic `consume` --
- * better-auth's own `legacyConsume` fallback (rate-limiter/index.mjs) then
- * does the exact same decide-then-write sequence externally via these two
- * methods, so reimplementing that logic here would just duplicate it.
- * Honest trade-off, not hidden: this makes rate-limit enforcement best-
- * effort under truly concurrent requests for the same key (KV has no atomic
- * increment primitive, unlike the Postgres path's conditional-WHERE
- * increment) -- the same caveat better-auth's own docs already state for
- * any customStorage lacking `consume`. Given this app has no real
- * production traffic yet ([[project_reseller_business_model]]) and the
- * alternative was a system that outright failed a large fraction of auth
- * requests, this is a reasonable trade to make now; revisit with a Durable-
- * Object-backed atomic counter if/when real concurrent abuse traffic
- * becomes a concern.
- */
-const rateLimitCustomStorage = {
-  get: async (key: string): Promise<RateLimitRecord | null> => {
-    const kv = getRateLimitKv();
-    if (!kv) return null;
-    const raw = await kv.get(key);
-    return raw ? (JSON.parse(raw) as RateLimitRecord) : null;
-  },
-  set: async (key: string, value: RateLimitRecord): Promise<void> => {
-    const kv = getRateLimitKv();
-    if (!kv) return;
-    // A little headroom over the app's longest rate-limit window (60s,
-    // password-reset endpoints) so KV never expires an entry mid-window.
-    await kv.put(key, JSON.stringify(value), { expirationTtl: 120 });
-  },
-};
 
 /** Bounds a best-effort Polar SDK call so it can never hang the request it's
  * attached to -- these hooks are explicitly meant to be "never blocking",
@@ -328,59 +247,31 @@ export const auth = betterAuth({
   // hardens origin/CSRF checking for cookie-based auth.
   trustedOrigins: process.env["BETTER_AUTH_URL"] ? [process.env["BETTER_AUTH_URL"]] : undefined,
   // better-auth's default in-memory rate-limit storage doesn't enforce
-  // correctly across Cloudflare Workers' distributed isolates (each isolate
-  // has its own memory). Originally moved to "database" (the `rateLimit`
-  // table, drizzle/0008_rate_limit.sql) so the limit was shared/enforced --
-  // but that table's own reads turned out to be the dominant trigger of a
-  // real production reliability bug (see `rateLimitCustomStorage`'s own
-  // comment above, and CLAUDE.md's "Final Handover Push" section), so this
-  // now runs through Cloudflare KV instead via `customStorage`. `storage` is
-  // omitted entirely -- per better-auth's own docs, it's ignored once
-  // `customStorage` is set. `enabled: true` makes rate-limiting explicit
-  // rather than relying on better-auth's own `isProduction`-derived
-  // default. Built-in special rules already cover /sign-in, /sign-up,
-  // /change-password, /change-email (3 req/10s) and password-reset
-  // endpoints (3 req/60s) -- see
+  // correctly across multiple serverless instances (each has its own
+  // memory) -- "database" storage (the `rateLimit` table,
+  // drizzle/0008_rate_limit.sql) shares/enforces the limit correctly via
+  // Postgres instead. (On Cloudflare Workers this table's own reads had
+  // been the dominant trigger of a `cloudflare:sockets`-specific connection
+  // stall -- see CLAUDE.md's "Final Handover Push" section -- which was
+  // this app's whole reason for moving off Cloudflare; that failure mode is
+  // specific to that runtime and doesn't apply on Vercel's plain Node.js
+  // functions, so the Postgres-backed storage is used directly here.)
+  // `enabled: true` makes rate-limiting explicit rather than relying on
+  // better-auth's own `isProduction`-derived default. Built-in special
+  // rules already cover /sign-in, /sign-up, /change-password, /change-email
+  // (3 req/10s) and password-reset endpoints (3 req/60s) -- see
   // node_modules/better-auth/node_modules/@better-auth/core/.../rate-limiter.
   rateLimit: {
     enabled: true,
-    customStorage: rateLimitCustomStorage,
+    storage: "database",
   },
-  // Without this, better-auth can't determine the real client IP on the
-  // deployed Worker (confirmed live via `wrangler tail`: it logged "Rate
-  // limiting could not determine a client IP and is falling back to a
-  // single shared per-path bucket", meaning every user shared one rate-
-  // limit counter per endpoint instead of being limited individually) --
-  // its own default only checks `x-forwarded-for`
+  // Without this, better-auth can't determine the real client IP behind
+  // Vercel's proxy -- its own default only checks `x-forwarded-for`
   // (node_modules/better-auth/node_modules/@better-auth/core/src/utils/
-  // ip.ts), not Cloudflare's dedicated `CF-Connecting-IP` header, which
-  // Cloudflare's edge always sets to the real client IP on every Worker
-  // request.
+  // ip.ts), not Vercel's own `x-real-ip` header.
   advanced: {
     ipAddress: {
-      ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"],
-    },
-    // Root cause of a real, live-reproduced production bug: without this,
-    // better-auth's internal `runInBackgroundOrAwait` (used by, among other
-    // things, the database rate limiter's periodic expired-rows cleanup --
-    // node_modules/better-auth/dist/api/rate-limiter/index.mjs) has no real
-    // background-task mechanism to call, so it silently falls through to a
-    // plain `await` -- turning a "background" cleanup into something that
-    // blocks the actual response. Confirmed via a temporary diagnostic
-    // deploy (console.log immediately before/after `auth.handler(request)`
-    // in server.ts, watched live via `wrangler tail`): every failure showed
-    // the START log with no matching DONE or THREW log for that request --
-    // `auth.handler()` itself never settled -- while `/`, `/api/health`, and
-    // every other route that doesn't go through better-auth's handler
-    // stayed 100% reliable throughout. This is better-auth's own documented
-    // Cloudflare Workers pattern (see its `advanced.backgroundTasks`
-    // JSDoc) -- executionContextStorage (execution-context.ts) makes the
-    // current request's real ExecutionContext available here via
-    // AsyncLocalStorage, since this handler has no direct access to it.
-    backgroundTasks: {
-      handler: (promise: Promise<unknown>) => {
-        executionContextStorage.getStore()?.waitUntil(promise);
-      },
+      ipAddressHeaders: ["x-real-ip", "x-forwarded-for"],
     },
   },
   // Best-effort audit trail for the two sensitive self-service account

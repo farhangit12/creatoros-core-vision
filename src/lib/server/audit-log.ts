@@ -20,7 +20,7 @@ export async function recordAuditEvent(params: {
       userId: params.userId,
       event: params.event,
       metadata: params.metadata ?? null,
-      ipAddress: params.request?.headers.get("cf-connecting-ip") ?? params.request?.headers.get("x-forwarded-for") ?? null,
+      ipAddress: params.request?.headers.get("x-real-ip") ?? params.request?.headers.get("x-forwarded-for") ?? null,
       userAgent: params.request?.headers.get("user-agent") ?? null,
     });
   } catch (error) {

@@ -32,20 +32,12 @@ function stubPgForClientOnly(): Plugin {
   };
 }
 
-// Pinned per ASCEND A2 (2026-08-18): nitro's own default is the literal string
-// "latest", which resolves to the build machine's current system date at build
-// time — non-reproducible, and broke local `wrangler dev`/workerd entirely when
-// this machine's clock read a date newer than what the installed wrangler/workerd
-// build supports ("Compatibility date ... is in the future and unsupported").
-// 2024-09-23 is the date nodejs_compat became broadly supported/documented by
-// Cloudflare and has been verified working end-to-end against wrangler 4.123.0 in
-// this repo's Worker boot/HTTP/SSR tests. Bump deliberately, not by letting it float.
-// Set as an env var (nitro reads `COMPATIBILITY_DATE` at build time) rather than via
-// the `nitro` option below, since @lovable.dev/vite-tanstack-config's type for that
-// option deliberately excludes compatibilityDate (see its own comment on `nitro?:`).
-process.env["COMPATIBILITY_DATE"] ??= "2024-09-23";
-
 export default defineConfig({
+  // Force-pin the Vercel build target (Vercel Build Output API v3) instead of
+  // the platform default (`cloudflare-module`) — this branch (`platform/vercel`)
+  // migrates the deploy target off Cloudflare Workers. `feature/v1-functional`
+  // is unaffected since it doesn't have this override.
+  nitro: { preset: "vercel" },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
@@ -88,15 +80,6 @@ export default defineConfig({
   vite: {
     optimizeDeps: {
       exclude: ["pg"],
-    },
-    // Vite's dev server rejects any Host header it doesn't recognize (DNS-
-    // rebinding protection), which otherwise blocks a temporary cloudflared
-    // quick tunnel (a random *.trycloudflare.com hostname) used to give
-    // Polar's webhook a real internet-reachable URL pointing at local dev
-    // for sandbox testing. Dev-server-only setting -- has no effect on the
-    // production build/deploy.
-    server: {
-      allowedHosts: [".trycloudflare.com"],
     },
   },
 });
