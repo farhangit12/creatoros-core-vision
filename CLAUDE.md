@@ -436,7 +436,7 @@ A 137-item "CreatorOS End-to-End Production & Security Readiness" checklist (15 
 
 `npx tsc --noEmit` and `npm run build`: both clean throughout. Committed `7f083d4`.
 
-**Still open, deliberately not built (each needs the user's own account/infra/decision, not code):** 2FA, email verification (deliberately off, tied to the Google-linking trade-off), an async job queue, a caching layer, centralized logging/uptime monitoring/alerting (all need a third-party account), analytics/event tracking, Google Search Console (needs a custom domain), a production-scale load test, and an actual backup-restore drill (capability + steps are documented in `docs/OPERATIONS.md`; never executed against live Neon). See the readiness-audit artifact for the full remaining item list.
+**Still open, deliberately not built (each needs the user's own account/infra/decision, not code):** 2FA, an async job queue, a caching layer, centralized logging/uptime monitoring/alerting (all need a third-party account), analytics/event tracking, Google Search Console (needs a custom domain), and a production-scale load test. See the readiness-audit artifact for the full remaining item list. (Email verification and the backup-restore drill, both listed here originally, are now done — see "Email verification enforcement" and the RTO note in `docs/OPERATIONS.md` below/elsewhere in this file.)
 
 ## Final Handover Push — Auth/SSR Reliability Fix (COMPLETE, verified live, 2026-08-22)
 

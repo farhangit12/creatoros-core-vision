@@ -100,11 +100,17 @@ Measured from the real Neon project (`creatoros-ai`, org
   or deleted, is not recoverable. Extending this window is a paid Neon plan
   upgrade — out of scope for this pass per the "leave what costs money"
   boundary, but worth knowing before treating 6 hours as generous.
-- **RTO: not measured, estimated at a few minutes.** Neon's branch-restore
-  mechanism (create a new branch from a point in time, then point the app
-  at it) is typically fast, but this has never actually been drilled in
-  this project — see Backup restore below. Treat the "few minutes" figure
-  as an estimate until it's been tested once for real.
+- **RTO: drilled for real (2026-08-23), exact duration not timed.** The
+  restore steps below were actually performed against a real scratch
+  branch (`backup-drill-test`, point-in-time restore, auto-deleted after 1
+  day) — not just estimated. A read query against it returned real,
+  sensible data (a user count consistent with the restore timestamp
+  chosen). What's confirmed: the mechanism works end-to-end, and branch
+  creation felt fast enough in practice that nobody thought to time it
+  precisely — so "a few minutes" remains the working estimate, now
+  backed by one successful real run instead of pure inference. A future
+  drill that actually stopwatches branch-creation-to-queryable would
+  upgrade this from a working estimate to an exact number.
 - **Cloudinary-hosted assets** (uploaded files, AI-generated images/
   thumbnails) have no separate backup/PITR at all — Cloudinary's own
   platform durability is the only protection. Not addressed by this pass;
@@ -113,17 +119,21 @@ Measured from the real Neon project (`creatoros-ai`, org
 ## Backup restore — manual steps (Neon MCP here is read-only, can't do this automatically)
 
 1. Go to the Neon console → project `creatoros-ai` → Branches.
-2. Create a new branch from the `production` branch, selecting "Restore to
-   a point in time" and picking a timestamp within the last 6 hours.
-3. Get the new branch's connection string.
+2. Create a new branch from the `production` branch: pick "Branch data and
+   schema from a past point in time" (not the plain "Branch data and
+   schema" option, which just clones current HEAD) and choose a timestamp
+   within the last 6 hours. Setting auto-delete to "After 1 day" means you
+   don't have to remember to clean it up.
+3. Get the new branch's connection string (pooled).
 4. Point a throwaway local `.env`'s `DATABASE_URL` at it (never the real
-   `production` branch) and run a read query to confirm the data at that
-   point in time looks correct.
-5. Delete the throwaway branch when done.
+   `production` branch) and run a read query — either via Neon's own
+   in-console SQL Editor (select the scratch branch first) or any
+   Postgres client — to confirm the data at that point in time looks
+   correct.
+5. Delete the throwaway branch when done (or just let auto-delete handle it).
 
-This has **not** been performed yet in this project — doing it once for
-real (even against a scratch branch, not production) is the only way to
-turn the RTO estimate above into a measured number.
+**Performed for real on 2026-08-23** (see the RTO note above) — confirmed
+working end-to-end, not just documented in theory.
 
 ## Incident response (lightweight)
 
