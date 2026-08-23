@@ -5,6 +5,7 @@ import { renderErrorPage } from "./lib/error-page";
 import { auth } from "./lib/auth";
 import { applySecurityHeaders } from "./lib/server/security-headers";
 import { logger } from "./lib/server/logger";
+import { executionContextStorage, getRequestWaitUntil } from "./lib/server/execution-context";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 
@@ -134,7 +135,16 @@ export default {
   async fetch(request: Request) {
     const requestId = crypto.randomUUID();
     const pathname = new URL(request.url).pathname;
-    const response = await handleRequest(request, pathname, requestId);
+    // Runs the whole request inside an AsyncLocalStorage context carrying
+    // this request's real `waitUntil` -- see execution-context.ts for why
+    // this exists (better-auth's own background-task hook needs a real
+    // fire-and-forget primitive it has no direct access to otherwise).
+    // Falls back to a no-op-store `undefined` locally, where no such
+    // runtime property exists -- auth.ts's handler already treats a missing
+    // store the same as it always did (falls through to a plain `await`).
+    const response = await executionContextStorage.run(getRequestWaitUntil(request), () =>
+      handleRequest(request, pathname, requestId),
+    );
     const withSecurityHeaders = await applySecurityHeaders(response);
     withSecurityHeaders.headers.set("X-Request-Id", requestId);
     return withSecurityHeaders;

@@ -13,6 +13,7 @@ import { initCreditAccountForNewUser } from "@/lib/server/credits";
 import { polarClient } from "@/lib/server/polar-client";
 import { syncPolarSubscriptionState } from "@/lib/server/polar-sync";
 import { recordAuditEvent } from "@/lib/server/audit-log";
+import { executionContextStorage } from "@/lib/server/execution-context";
 
 /** Best-effort cleanup of the user's uploaded files on Cloudinary before the
  * account row (and everything FK-cascaded from it) is deleted. */
@@ -272,6 +273,27 @@ export const auth = betterAuth({
   advanced: {
     ipAddress: {
       ipAddressHeaders: ["x-real-ip", "x-forwarded-for"],
+    },
+    // Without this, better-auth's internal `runInBackgroundOrAwait` (used
+    // by, among other things, the database rate limiter's periodic
+    // expired-rows cleanup -- node_modules/better-auth/dist/api/
+    // rate-limiter/index.mjs) has no real background-task mechanism to
+    // call, so it silently falls through to a plain `await` -- turning a
+    // "background" cleanup into something that blocks the actual response.
+    // executionContextStorage (execution-context.ts) makes the current
+    // request's real Vercel `waitUntil` available here via
+    // AsyncLocalStorage, since this handler has no direct access to it.
+    // Falls back to a plain `await` (better-auth's own default) wherever no
+    // such runtime property exists -- same as before this was wired up.
+    backgroundTasks: {
+      handler: (promise: Promise<unknown>) => {
+        const waitUntil = executionContextStorage.getStore();
+        if (waitUntil) {
+          waitUntil(promise);
+        } else {
+          void promise;
+        }
+      },
     },
   },
   // Best-effort audit trail for the two sensitive self-service account
