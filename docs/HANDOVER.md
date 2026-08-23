@@ -52,6 +52,14 @@ regardless of whose accounts are behind the secrets above. In short:
 `tsc` → `build` → `wrangler deploy` (needs the deploy-scoped Cloudflare
 token) → smoke test → watch `wrangler tail` briefly.
 
+**If deploying on Vercel instead** (see CLAUDE.md's "Vercel Migration"
+section — branch `platform/vercel`, built and live-verified, not yet
+merged): `tsc` → `build` produces a Vercel Build Output API v3 bundle
+directly; deploy via `vercel deploy` (preview) or `vercel deploy --prod`,
+with secrets pushed via `vercel env add` instead of `wrangler secret put`.
+`BETTER_AUTH_URL` can be left unset on Vercel (better-auth derives it
+per-request); it must be set explicitly on Cloudflare.
+
 ## Database
 
 Either transfer the existing Neon project, or stand up a fresh one and
@@ -64,18 +72,37 @@ make further schema changes later.
 
 Being upfront about what's genuinely unfinished, not glossed over:
 
-- **~8s latency on some page loads and auth requests.** A critical
-  reliability bug (intermittent hard failures) was found and fixed this
-  session — the app no longer errors out, but a majority of requests
-  still take ~8 seconds longer than ideal due to an unresolved Postgres
-  connection-stability issue on Cloudflare Workers. See CLAUDE.md's
-  "Final Handover Push — Auth/SSR Reliability Fix" section for full
-  technical detail and what was already tried. Worth a dedicated future
-  fix (Cloudflare Hyperdrive done properly, or switching to
-  `@neondatabase/serverless`).
-- **2FA and email verification are both off** — a deliberate, documented
-  trade-off (see CLAUDE.md's Google OAuth section for the specific
-  reasoning). Revisit before handling real user data at scale.
+- **~8s latency on some page loads and auth requests, IF still deployed
+  on Cloudflare Workers.** A critical reliability bug (intermittent hard
+  failures) was found and fixed on Cloudflare — the app no longer errors
+  out, but a majority of requests there still take ~8 seconds longer than
+  ideal due to a `cloudflare:sockets`-specific Postgres transport quirk.
+  See CLAUDE.md's "Final Handover Push — Auth/SSR Reliability Fix"
+  section for full technical detail. **This is confirmed fixed on the
+  `platform/vercel` branch** (plain Node.js runtime doesn't have this
+  quirk — measured 0.82–1.10s on the same query that used to stall on
+  Cloudflare) — see CLAUDE.md's "Vercel Migration" section. That branch
+  is fully built and live-verified but, as of this handover, not yet
+  merged or cut over to real traffic — check with the seller whether the
+  buyer is receiving the Cloudflare or the Vercel deployment before
+  treating this as an open issue.
+- **2FA is off** — not built. Revisit before handling real user data at scale.
+- **Email verification is now ON** (`emailAndPassword.requireEmailVerification: true`,
+  see CLAUDE.md's "Email verification enforcement" section) — closes the
+  account-linking security gap that used to be an accepted trade-off. One
+  real consequence: since Resend has no verified sending domain yet (see
+  below), verification emails can currently only be delivered to the
+  Resend account's own address — every other new signup will show "check
+  your email" but the email itself won't arrive until domain verification
+  is done. Signup itself still succeeds either way (the email send is
+  fire-and-forget); only actually signing in with email/password is
+  blocked until verified. Google OAuth is unaffected. **73 of 78 existing
+  accounts at time of writing have `emailVerified: false`** (mostly
+  throwaway QA test accounts from this project's testing history) and are
+  now locked out of email/password sign-in until either verified for real
+  or grandfathered in via a one-time reviewed `UPDATE "user" SET
+  "emailVerified" = true WHERE "emailVerified" = false` — not run
+  automatically, needs an explicit decision.
 - **Resend has no verified sending domain** — password-reset and feedback
   emails will 403 until the buyer verifies a domain at
   `resend.com/domains` and updates `FROM_ADDRESS` in

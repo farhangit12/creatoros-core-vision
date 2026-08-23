@@ -6,7 +6,7 @@ import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { sendChangeEmailVerification, sendPasswordResetEmail } from "@/lib/server/email";
+import { sendEmailVerification, sendPasswordResetEmail } from "@/lib/server/email";
 import { deleteFromCloudinary, deleteFromCloudinaryByUrl, isOwnCloudinaryUrl } from "@/lib/server/files-storage";
 import { destroyImageFromCloudinary } from "@/lib/ai/providers/image/cloudinary-upload";
 import { initCreditAccountForNewUser } from "@/lib/server/credits";
@@ -159,19 +159,31 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
+    // Closes a real account-takeover gap: without this, anyone could
+    // pre-register a victim's email/password, and the victim's later
+    // "Sign in with Google" would silently link to the attacker's account
+    // (see account.accountLinking.requireLocalEmailVerified below -- that
+    // check only means something once emails are actually verified). New
+    // signups now must click a real verification link before they can sign
+    // in with email/password; Google OAuth is unaffected since Google
+    // itself verifies the email.
+    requireEmailVerification: true,
     sendResetPassword: async ({ user, url }) => {
       await sendPasswordResetEmail({ to: user.email, name: user.name, url });
     },
   },
-  // Only used by the change-email flow today (accounts here are never
-  // verified at signup) -- confirms control of the new address before the
-  // email actually changes. See update-user.mjs's /change-email endpoint:
-  // since emailVerified is always false for this app's users, this is the
-  // single confirmation step (no separate "confirm from old email" step).
+  // Used by both the signup-verification flow (requireEmailVerification
+  // above) and the change-email flow -- confirms control of an email address
+  // before it's trusted. `sendOnSignIn` re-sends the link if someone tries
+  // to sign in before verifying, instead of just leaving them stuck.
+  // `autoSignInAfterVerification` logs them straight in when they click the
+  // link, instead of requiring a second manual sign-in right after.
   emailVerification: {
     sendVerificationEmail: async ({ user, url }) => {
-      await sendChangeEmailVerification({ to: user.email, name: user.name, url });
+      await sendEmailVerification({ to: user.email, name: user.name, url });
     },
+    sendOnSignIn: true,
+    autoSignInAfterVerification: true,
   },
   user: {
     changeEmail: {
@@ -194,24 +206,20 @@ export const auth = betterAuth({
       clientSecret: process.env["GOOGLE_CLIENT_SECRET"] as string,
     },
   },
-  // Without this, better-auth blocks Google sign-in with "account_not_linked"
-  // for every existing email/password user (traced to
-  // node_modules/better-auth/dist/oauth2/link-account.mjs's
-  // requireLocalEmailVerified check, which defaults to true and compares
-  // against the LOCAL account's emailVerified) -- this app never verifies
-  // email at signup for any account (see the emailVerification comment
-  // above), so that check fails unconditionally. Trade-off, accepted for now
-  // per user decision: this reopens the standard email/password-then-OAuth
-  // account-linking attack (attacker pre-registers your email, you later
-  // "Sign in with Google" and get silently linked to their account) -- low
-  // stakes today since there are no real users/payments yet. Revisit once
-  // there are (e.g. by turning on real email verification and removing this
-  // override, rather than leaving it permanently disabled).
-  account: {
-    accountLinking: {
-      requireLocalEmailVerified: false,
-    },
-  },
+  // Left at better-auth's own default (true, so no explicit override is
+  // written here) now that emailAndPassword.requireEmailVerification is on
+  // above -- this is what actually closes the account-linking attack this
+  // project accepted as a known trade-off for a while (attacker
+  // pre-registers a victim's email/password, victim's later "Sign in with
+  // Google" silently links to the attacker's account). node_modules/
+  // better-auth/dist/oauth2/link-account.mjs's requireLocalEmailVerified
+  // check compares against the LOCAL account's real emailVerified, which is
+  // now genuinely true-or-false instead of permanently false for everyone.
+  // EXISTING accounts created before this change still have emailVerified:
+  // false and will hit the same "account_not_linked" block this override
+  // used to work around -- see CLAUDE.md's writeup of this change for the
+  // one-time grandfather-UPDATE option before relying on Google sign-in for
+  // any pre-existing account.
   databaseHooks: {
     user: {
       create: {

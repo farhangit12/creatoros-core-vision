@@ -69,24 +69,31 @@ export async function sendPasswordResetEmail(params: {
   }
 }
 
-function buildChangeEmailVerificationHtml(params: { name: string; url: string }): string {
+// Shared by two better-auth flows that both funnel through the single
+// `emailVerification.sendVerificationEmail` callback: verifying a brand-new
+// signup, and confirming a changed email address. The copy is deliberately
+// generic enough to read correctly for either -- better-auth's callback
+// params don't reliably distinguish which flow triggered it without decoding
+// the JWT token ourselves, which isn't worth the fragility for a wording
+// difference.
+function buildEmailVerificationHtml(params: { name: string; url: string }): string {
   const safeName = escapeHtml(params.name || "there");
   const safeUrl = escapeHtml(params.url);
   return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; color: #111827;">
       <p style="font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: #6b7280; margin: 0 0 24px;">CreatorOS</p>
-      <h1 style="font-size: 20px; font-weight: 600; margin: 0 0 16px;">Confirm your new email</h1>
+      <h1 style="font-size: 20px; font-weight: 600; margin: 0 0 16px;">Verify your email</h1>
       <p style="font-size: 14px; line-height: 1.6; color: #374151; margin: 0 0 24px;">
-        Hi ${safeName}, someone requested to change the email on your CreatorOS account to this
-        address. Click the button below to confirm the change.
+        Hi ${safeName}, click the button below to verify this email address for your CreatorOS
+        account.
       </p>
       <p style="margin: 0 0 24px;">
         <a href="${safeUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 500; padding: 10px 20px; border-radius: 8px;">
-          Confirm new email
+          Verify email
         </a>
       </p>
       <p style="font-size: 13px; line-height: 1.6; color: #6b7280; margin: 0 0 8px;">
-        This link expires in 1 hour and can only be used once. If you didn't request this, you can safely ignore this email — your address won't change unless this link is clicked.
+        This link expires in 1 hour and can only be used once. If you didn't request this, you can safely ignore this email.
       </p>
       <p style="font-size: 12px; line-height: 1.6; color: #9ca3af; margin: 24px 0 0; word-break: break-all;">
         If the button doesn't work, copy and paste this link into your browser:<br />${safeUrl}
@@ -156,7 +163,14 @@ export async function sendFeedbackEmail(params: {
   }
 }
 
-export async function sendChangeEmailVerification(params: {
+/**
+ * Sends the "click to verify this email address" link -- used both for a
+ * brand-new signup (see auth.ts's `emailAndPassword.requireEmailVerification`)
+ * and for confirming a changed email address (`user.changeEmail`). Both
+ * flows are wired through better-auth's single `emailVerification.
+ * sendVerificationEmail` callback, so one generic template covers both.
+ */
+export async function sendEmailVerification(params: {
   to: string;
   name: string;
   url: string;
@@ -175,8 +189,8 @@ export async function sendChangeEmailVerification(params: {
     body: JSON.stringify({
       from: FROM_ADDRESS,
       to: params.to,
-      subject: "Confirm your new CreatorOS email address",
-      html: buildChangeEmailVerificationHtml({ name: params.name, url: params.url }),
+      subject: "Verify your CreatorOS email address",
+      html: buildEmailVerificationHtml({ name: params.name, url: params.url }),
     }),
   });
 

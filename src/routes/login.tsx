@@ -56,6 +56,11 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Set when sign-in fails specifically because the account's email isn't
+  // verified yet (see auth.ts's emailAndPassword.requireEmailVerification)
+  // -- offers a resend action instead of just a dead-end error message.
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
   const emailInvalid = email.length > 0 && !email.includes("@");
 
   // Surfaces a real Google-sign-in failure (redirected here via auth.ts's
@@ -73,6 +78,8 @@ function LoginPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setUnverifiedEmail(null);
+    setResendState("idle");
     if (emailInvalid || !email || !password) {
       setError("Enter a valid email and password to continue.");
       return;
@@ -85,10 +92,25 @@ function LoginPage() {
     });
     setLoading(false);
     if (signInError) {
-      setError(signInError.message ?? "Couldn't sign in. Check your credentials and try again.");
+      if (signInError.message === "Email not verified") {
+        setUnverifiedEmail(email);
+      } else {
+        setError(signInError.message ?? "Couldn't sign in. Check your credentials and try again.");
+      }
       return;
     }
     navigate({ to: "/dashboard" });
+  };
+
+  const resendVerification = async () => {
+    if (!unverifiedEmail) return;
+    setResendState("sending");
+    // send-verification-email (unlike signup's own verification email,
+    // which is fire-and-forget) propagates a real Resend delivery failure
+    // as an error here -- surfaced honestly below rather than always
+    // claiming success.
+    const { error: resendError } = await authClient.sendVerificationEmail({ email: unverifiedEmail });
+    setResendState(resendError ? "failed" : "sent");
   };
 
   return (
@@ -112,6 +134,35 @@ function LoginPage() {
           >
             <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
             <span>{error}</span>
+          </div>
+        ) : null}
+
+        {unverifiedEmail ? (
+          <div
+            role="alert"
+            className="flex flex-col gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-[13px] leading-relaxed text-foreground"
+          >
+            <div className="flex gap-2.5">
+              <AlertCircle className="mt-0.5 size-4 shrink-0 text-warning" />
+              <span>
+                Verify your email before signing in — we sent a link to <strong>{unverifiedEmail}</strong> when you
+                signed up.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={resendVerification}
+              disabled={resendState === "sending" || resendState === "sent"}
+              className="self-start text-accent-brand hover:underline disabled:pointer-events-none disabled:opacity-70"
+            >
+              {resendState === "sent"
+                ? "Verification email sent"
+                : resendState === "sending"
+                  ? "Sending…"
+                  : resendState === "failed"
+                    ? "Couldn't send — try again"
+                    : "Resend verification email"}
+            </button>
           </div>
         ) : null}
 

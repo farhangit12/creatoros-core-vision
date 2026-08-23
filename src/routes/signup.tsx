@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { AlertCircle, Check, Eye, EyeOff, Loader2 } from "lucide-react";
+import { AlertCircle, Check, Eye, EyeOff, Loader2, Mail } from "lucide-react";
 import { AuthLayout } from "@/components/auth/auth-layout";
 import { GoogleAuthButton } from "@/components/auth/google-auth-button";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,12 @@ function SignupPage() {
   const [confirm, setConfirm] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set once signup succeeds but requires email verification first (no
+  // session is created yet in that case -- see auth.ts's
+  // emailAndPassword.requireEmailVerification) -- swaps the form for a
+  // "check your email" message instead of navigating to a dashboard the
+  // user isn't actually signed into yet.
+  const [verificationSentTo, setVerificationSentTo] = useState<string | null>(null);
   const score = strengthOf(password);
   const mismatch = confirm.length > 0 && confirm !== password;
 
@@ -63,7 +69,7 @@ function SignupPage() {
       return;
     }
     setLoading(true);
-    const { error: signUpError } = await authClient.signUp.email({
+    const { data, error: signUpError } = await authClient.signUp.email({
       name,
       email,
       password,
@@ -73,8 +79,39 @@ function SignupPage() {
       setError(signUpError.message ?? "Couldn't create your account. Try again.");
       return;
     }
+    if (!data?.token) {
+      setVerificationSentTo(email);
+      return;
+    }
     navigate({ to: "/dashboard" });
   };
+
+  if (verificationSentTo) {
+    return (
+      <AuthLayout
+        title="Check your email"
+        subtitle="One more step before your workspace is ready."
+        footer={
+          <>
+            Already verified?{" "}
+            <Link to="/login" className="text-accent-brand hover:underline">
+              Sign in
+            </Link>
+          </>
+        }
+      >
+        <div className="flex flex-col items-center gap-4 py-4 text-center">
+          <div className="grid size-12 place-items-center rounded-full bg-accent-brand/10 text-accent-brand">
+            <Mail className="size-6" />
+          </div>
+          <p className="text-sm leading-relaxed text-text-muted">
+            We sent a verification link to <span className="font-medium text-foreground">{verificationSentTo}</span>.
+            Click it to activate your account, then sign in.
+          </p>
+        </div>
+      </AuthLayout>
+    );
+  }
 
   return (
     <AuthLayout
