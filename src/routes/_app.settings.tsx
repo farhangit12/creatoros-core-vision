@@ -334,10 +334,13 @@ function TwoFactorSection() {
             ) : step === "setup" ? (
               <>
                 <DialogHeader>
-                  <DialogTitle>Scan this code</DialogTitle>
+                  <DialogTitle>Scan this code with an authenticator app</DialogTitle>
                   <DialogDescription>
-                    Scan with your authenticator app, then enter the 6-digit code it shows. Save your backup codes below
-                    somewhere safe — each one works once if you ever lose access to your authenticator.
+                    You'll need an authenticator app on your phone — Google Authenticator, Authy, Microsoft
+                    Authenticator or 1Password all work. Open it, choose "Add account" or "Scan QR code," and point
+                    your camera at the code below. It will then show you a 6-digit code that changes every 30
+                    seconds — enter that code below to finish. Save your backup codes too, somewhere safe — each one
+                    works once if you ever lose access to your authenticator.
                   </DialogDescription>
                 </DialogHeader>
                 <form className="space-y-4" onSubmit={confirmEnable} noValidate>
