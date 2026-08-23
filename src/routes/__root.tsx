@@ -14,6 +14,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { THEME_INIT_SCRIPT } from "../lib/theme";
 import { BUFFER_POLYFILL_SCRIPT } from "../lib/buffer-polyfill";
 import { CookieNotice } from "../components/cookie-notice";
+import { absoluteAssetUrl } from "../lib/canonical";
 
 function NotFoundComponent() {
   return (
@@ -93,9 +94,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content: "The creative operating system for independent creators.",
       },
       { property: "og:type", content: "website" },
-      { property: "og:image", content: "/favicon.png" },
+      { property: "og:image", content: absoluteAssetUrl("/favicon.png") },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:image", content: "/favicon.png" },
+      { name: "twitter:image", content: absoluteAssetUrl("/favicon.png") },
     ],
     links: [
       { rel: "preconnect", href: "https://fonts.googleapis.com" },

@@ -16,8 +16,18 @@ import { recordAuditEvent } from "@/lib/server/audit-log";
  */
 export async function syncPolarSubscriptionState(userId: string): Promise<void> {
   const state = await polarClient.customers.getStateExternal({ externalId: userId });
+  // "past_due" (a real Polar status, confirmed against the SDK's own
+  // SubscriptionStatus enum -- node_modules/@polar-sh/sdk/src/models/
+  // components/subscriptionstatus.ts) means Polar is still retrying a
+  // failed charge, not that the subscription has actually ended. Treating
+  // it the same as "no subscription" (the previous behavior) meant a
+  // single failed card charge instantly downgraded a paying user with zero
+  // warning -- standard dunning practice is to keep the plan active during
+  // the retry window and only downgrade once Polar itself gives up
+  // (transitioning to "canceled"/"unpaid", which already falls through to
+  // the no-active-subscription branch below).
   const activeSubscription = state.activeSubscriptions.find(
-    (s) => s.status === "active" || s.status === "trialing",
+    (s) => s.status === "active" || s.status === "trialing" || s.status === "past_due",
   );
 
   const [account] = await db.select().from(userCredits).where(eq(userCredits.userId, userId));

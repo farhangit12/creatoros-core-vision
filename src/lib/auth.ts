@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
+import { twoFactor } from "better-auth/plugins";
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -322,6 +323,21 @@ export const auth = betterAuth({
   },
   plugins: [
     tanstackStartCookies(),
+    // TOTP-based 2FA (authenticator apps -- Google Authenticator, 1Password,
+    // etc.). Verified against the real plugin source
+    // (node_modules/better-auth/dist/plugins/two-factor/*.mjs) before
+    // wiring: `enable` requires the user's current password and returns a
+    // TOTP URI + one-time backup codes in a single call; the account isn't
+    // actually flagged 2FA-on until the user verifies one real code via
+    // `verifyTotp`, closing the "enabled but never confirmed working" gap a
+    // naive implementation could leave open. `verifyTotp` is also the same
+    // endpoint used to complete a 2FA-gated sign-in (context-dependent on
+    // whether a real session or only the pending-2FA cookie is present) --
+    // one endpoint, two call sites, confirmed by reading the source rather
+    // than assumed.
+    twoFactor({
+      issuer: "CreatorOS",
+    }),
     polar({
       client: polarClient,
       // false, not true: see createPolarCustomerBestEffort above for why --

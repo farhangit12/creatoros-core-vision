@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { z } from "zod";
-import { AlertCircle, Check, Laptop, Loader2, Moon, Sun } from "lucide-react";
+import { AlertCircle, Check, Laptop, Loader2, Moon, ShieldCheck, Sun } from "lucide-react";
+import QRCode from "qrcode";
 import { PageHeader } from "@/components/app/primitives";
 import { WireLine } from "@/components/app/studio-kit";
 import { Switch } from "@/components/ui/switch";
@@ -117,6 +118,303 @@ function describeUserAgent(ua: string | null | undefined): string {
           ? "Safari"
           : "an unknown browser";
   return `${browser} on ${os}`;
+}
+
+type TwoFactorStep = "password" | "setup" | "done";
+
+/**
+ * TOTP-based 2FA setup/disable flow. Two real API calls make this work,
+ * confirmed against better-auth's actual plugin source before writing this
+ * (see auth.ts's twoFactor() comment): `enable({password})` returns a TOTP
+ * URI + one-time backup codes in a single response -- the account isn't
+ * actually flagged 2FA-on yet at that point, only after a real code is
+ * confirmed via `verifyTotp`, so the dialog holds the returned data in
+ * state across that gap rather than re-fetching it.
+ */
+function TwoFactorSection() {
+  const { data: session, refetch } = useSession();
+  const twoFactorEnabled = Boolean(session?.user && "twoFactorEnabled" in session.user && session.user.twoFactorEnabled);
+
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<TwoFactorStep>("password");
+  const [password, setPassword] = useState("");
+  const [totpURI, setTotpURI] = useState<string | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const reset = () => {
+    setStep("password");
+    setPassword("");
+    setTotpURI(null);
+    setQrDataUrl(null);
+    setBackupCodes([]);
+    setCode("");
+    setError(null);
+  };
+
+  const startEnable = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!password) {
+      setError("Enter your current password to continue.");
+      return;
+    }
+    setSubmitting(true);
+    const { data, error: enableError } = await authClient.twoFactor.enable({ password });
+    setSubmitting(false);
+    if (enableError || !data) {
+      setError(enableError?.message ?? "Couldn't start setup. Check your password and try again.");
+      return;
+    }
+    setTotpURI(data.totpURI);
+    setBackupCodes(data.backupCodes);
+    setQrDataUrl(await QRCode.toDataURL(data.totpURI));
+    setStep("setup");
+  };
+
+  const confirmEnable = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!code.trim()) {
+      setError("Enter the 6-digit code from your authenticator app.");
+      return;
+    }
+    setSubmitting(true);
+    const { error: verifyError } = await authClient.twoFactor.verifyTotp({ code: code.trim() });
+    setSubmitting(false);
+    if (verifyError) {
+      setError(verifyError.message ?? "That code didn't work. Try again.");
+      return;
+    }
+    setStep("done");
+    refetch();
+  };
+
+  const disable = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!password) {
+      setError("Enter your current password to confirm.");
+      return;
+    }
+    setSubmitting(true);
+    const { error: disableError } = await authClient.twoFactor.disable({ password });
+    setSubmitting(false);
+    if (disableError) {
+      setError(disableError.message ?? "Couldn't disable 2FA. Try again.");
+      return;
+    }
+    setOpen(false);
+    reset();
+    refetch();
+  };
+
+  const manualSecret = (() => {
+    if (!totpURI) return null;
+    try {
+      return new URL(totpURI).searchParams.get("secret");
+    } catch {
+      return null;
+    }
+  })();
+
+  return (
+    <Row
+      title="Two-factor authentication"
+      description={
+        twoFactorEnabled
+          ? "Enabled. Your account requires a code from your authenticator app to sign in."
+          : "Add a code from an authenticator app (Google Authenticator, 1Password, etc.) as a second sign-in step."
+      }
+      control={
+        <Dialog
+          open={open}
+          onOpenChange={(o) => {
+            setOpen(o);
+            if (!o) reset();
+          }}
+        >
+          <DialogTrigger asChild>
+            {twoFactorEnabled ? (
+              <Button size="sm" variant="outline" className="border-danger/30 text-danger hover:bg-danger/10 hover:text-danger">
+                Disable
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline">
+                Enable
+              </Button>
+            )}
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-sm">
+            {twoFactorEnabled ? (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Disable two-factor authentication</DialogTitle>
+                  <DialogDescription>
+                    Your account will only need your password to sign in afterward.
+                  </DialogDescription>
+                </DialogHeader>
+                <form className="space-y-4" onSubmit={disable} noValidate>
+                  {error ? (
+                    <div role="alert" className="flex gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 text-[13px] leading-relaxed text-foreground">
+                      <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
+                      <span>{error}</span>
+                    </div>
+                  ) : null}
+                  <div className="space-y-2">
+                    <Label htmlFor="twofactor-disable-password">Current password</Label>
+                    <Input
+                      id="twofactor-disable-password"
+                      type="password"
+                      autoComplete="current-password"
+                      className="h-10"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={submitting}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" variant="destructive" disabled={submitting || !password}>
+                      {submitting ? (
+                        <>
+                          <Loader2 className="size-3.5 animate-spin" /> Disabling…
+                        </>
+                      ) : (
+                        "Disable 2FA"
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </>
+            ) : step === "password" ? (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Enable two-factor authentication</DialogTitle>
+                  <DialogDescription>Confirm your password to start setup.</DialogDescription>
+                </DialogHeader>
+                <form className="space-y-4" onSubmit={startEnable} noValidate>
+                  {error ? (
+                    <div role="alert" className="flex gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 text-[13px] leading-relaxed text-foreground">
+                      <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
+                      <span>{error}</span>
+                    </div>
+                  ) : null}
+                  <div className="space-y-2">
+                    <Label htmlFor="twofactor-enable-password">Current password</Label>
+                    <Input
+                      id="twofactor-enable-password"
+                      type="password"
+                      autoComplete="current-password"
+                      className="h-10"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={submitting}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={submitting || !password}>
+                      {submitting ? (
+                        <>
+                          <Loader2 className="size-3.5 animate-spin" /> Starting…
+                        </>
+                      ) : (
+                        "Continue"
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </>
+            ) : step === "setup" ? (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Scan this code</DialogTitle>
+                  <DialogDescription>
+                    Scan with your authenticator app, then enter the 6-digit code it shows. Save your backup codes below
+                    somewhere safe — each one works once if you ever lose access to your authenticator.
+                  </DialogDescription>
+                </DialogHeader>
+                <form className="space-y-4" onSubmit={confirmEnable} noValidate>
+                  {error ? (
+                    <div role="alert" className="flex gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 text-[13px] leading-relaxed text-foreground">
+                      <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
+                      <span>{error}</span>
+                    </div>
+                  ) : null}
+                  {qrDataUrl ? (
+                    <div className="flex justify-center">
+                      <img src={qrDataUrl} alt="Scan this QR code with your authenticator app" className="size-40 rounded-lg border border-border-subtle" />
+                    </div>
+                  ) : null}
+                  {manualSecret ? (
+                    <p className="break-all text-center font-mono text-[11px] text-text-subtle">{manualSecret}</p>
+                  ) : null}
+                  <div className="space-y-2">
+                    <Label htmlFor="twofactor-code">6-digit code</Label>
+                    <Input
+                      id="twofactor-code"
+                      autoComplete="one-time-code"
+                      placeholder="123456"
+                      className="h-10"
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                    />
+                  </div>
+                  <div className="rounded-lg border border-border-subtle bg-surface-2 p-3">
+                    <p className="mb-2 text-[12px] font-medium text-text-subtle">Backup codes</p>
+                    <div className="grid grid-cols-2 gap-1.5 font-mono text-[12px] text-foreground">
+                      {backupCodes.map((c) => (
+                        <span key={c}>{c}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button type="submit" disabled={submitting || !code.trim()}>
+                      {submitting ? (
+                        <>
+                          <Loader2 className="size-3.5 animate-spin" /> Verifying…
+                        </>
+                      ) : (
+                        "Verify & enable"
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </>
+            ) : (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <ShieldCheck className="size-5 text-success" /> Two-factor authentication enabled
+                  </DialogTitle>
+                  <DialogDescription>
+                    Your account now requires a code from your authenticator app to sign in.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      reset();
+                    }}
+                  >
+                    Done
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
+      }
+    />
+  );
 }
 
 function ActiveSessionsSection() {
@@ -534,15 +832,7 @@ function SettingsPage() {
 
               {section === "Security" ? (
                 <>
-                  <Row
-                    title="Two-factor authentication"
-                    description="Requires an authenticator app. Coming in a later phase."
-                    control={
-                      <Button size="sm" variant="outline" disabled>
-                        Enable
-                      </Button>
-                    }
-                  />
+                  <TwoFactorSection />
                   <ActiveSessionsSection />
                 </>
               ) : null}

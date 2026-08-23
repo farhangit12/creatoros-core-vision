@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Check, CreditCard } from "lucide-react";
+import { AlertCircle, Check, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader, SectionLabel } from "@/components/app/primitives";
 import { Button } from "@/components/ui/button";
@@ -139,6 +139,7 @@ function BillingPage() {
   const currentPlan = account ? (PLANS[account.planId as keyof typeof PLANS] ?? PLANS.free) : undefined;
   const currentPlanUnlimited = account ? isUnlimitedPlan(account.planId as PlanId) : false;
   const cancelsAtPeriodEnd = account?.subscriptionStatus === "canceled";
+  const paymentPastDue = account?.subscriptionStatus === "past_due";
 
   useEffect(() => {
     if (search.checkout !== "success") return;
@@ -164,6 +165,23 @@ function BillingPage() {
 
       <section>
         <SectionLabel>Current plan</SectionLabel>
+        {paymentPastDue ? (
+          <div
+            role="alert"
+            className="mb-4 flex items-center justify-between gap-4 rounded-xl border border-warning/30 bg-warning/10 px-5 py-4"
+          >
+            <div className="flex gap-2.5">
+              <AlertCircle className="mt-0.5 size-4 shrink-0 text-warning" />
+              <p className="text-[13px] leading-relaxed text-foreground">
+                Your last payment didn't go through. We'll keep retrying automatically, but your plan may be
+                downgraded if it keeps failing — update your payment method to avoid losing access.
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={openBillingPortal} className="shrink-0">
+              Update payment method
+            </Button>
+          </div>
+        ) : null}
         <div className="rounded-2xl border border-border p-7">
           {account && currentPlan ? (
             <>

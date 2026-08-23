@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
+import { AlertCircle, Eye, EyeOff, KeyRound, Loader2 } from "lucide-react";
 import { z } from "zod";
 import { AuthLayout } from "@/components/auth/auth-layout";
 import { GoogleAuthButton } from "@/components/auth/google-auth-button";
@@ -62,6 +62,17 @@ function LoginPage() {
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
   const emailInvalid = email.length > 0 && !email.includes("@");
+  // Set when sign-in succeeds but the account has 2FA enabled -- better-auth
+  // returns `{ twoFactorRedirect: true }` instead of a real session in this
+  // case (see auth.ts's twoFactor plugin comment). The code-entry step below
+  // reuses the same verifyTotp/verifyBackupCode endpoint whether it's a
+  // first-time setup confirmation or a real sign-in challenge -- confirmed
+  // by reading the plugin source, not assumed.
+  const [twoFactorPending, setTwoFactorPending] = useState(false);
+  const [useBackupCode, setUseBackupCode] = useState(false);
+  const [code, setCode] = useState("");
+  const [codeLoading, setCodeLoading] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
 
   // Surfaces a real Google-sign-in failure (redirected here via auth.ts's
   // onAPIError.errorURL) instead of it silently landing on the homepage with
@@ -85,7 +96,7 @@ function LoginPage() {
       return;
     }
     setLoading(true);
-    const { error: signInError } = await authClient.signIn.email({
+    const { data, error: signInError } = await authClient.signIn.email({
       email,
       password,
       rememberMe,
@@ -97,6 +108,29 @@ function LoginPage() {
       } else {
         setError(signInError.message ?? "Couldn't sign in. Check your credentials and try again.");
       }
+      return;
+    }
+    if (data && "twoFactorRedirect" in data && data.twoFactorRedirect) {
+      setTwoFactorPending(true);
+      return;
+    }
+    navigate({ to: "/dashboard" });
+  };
+
+  const submitTwoFactorCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCodeError(null);
+    if (!code.trim()) {
+      setCodeError("Enter the code to continue.");
+      return;
+    }
+    setCodeLoading(true);
+    const { error: verifyError } = useBackupCode
+      ? await authClient.twoFactor.verifyBackupCode({ code: code.trim() })
+      : await authClient.twoFactor.verifyTotp({ code: code.trim() });
+    setCodeLoading(false);
+    if (verifyError) {
+      setCodeError(verifyError.message ?? "That code didn't work. Try again.");
       return;
     }
     navigate({ to: "/dashboard" });
@@ -112,6 +146,64 @@ function LoginPage() {
     const { error: resendError } = await authClient.sendVerificationEmail({ email: unverifiedEmail });
     setResendState(resendError ? "failed" : "sent");
   };
+
+  if (twoFactorPending) {
+    return (
+      <AuthLayout
+        title="Two-factor verification"
+        subtitle={useBackupCode ? "Enter one of your saved backup codes." : "Enter the code from your authenticator app."}
+        footer={
+          <button
+            type="button"
+            onClick={() => {
+              setUseBackupCode((v) => !v);
+              setCode("");
+              setCodeError(null);
+            }}
+            className="text-accent-brand hover:underline"
+          >
+            {useBackupCode ? "Use authenticator app instead" : "Use a backup code instead"}
+          </button>
+        }
+      >
+        <form onSubmit={submitTwoFactorCode} className="space-y-5" noValidate>
+          {codeError ? (
+            <div
+              role="alert"
+              className="flex gap-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 text-[13px] leading-relaxed text-foreground"
+            >
+              <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
+              <span>{codeError}</span>
+            </div>
+          ) : null}
+          <div className="space-y-2">
+            <Label htmlFor="twoFactorCode">{useBackupCode ? "Backup code" : "6-digit code"}</Label>
+            <div className="relative">
+              <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-subtle" />
+              <Input
+                id="twoFactorCode"
+                autoComplete="one-time-code"
+                autoFocus
+                placeholder={useBackupCode ? "xxxx-xxxx" : "123456"}
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                className="h-10 pl-9"
+              />
+            </div>
+          </div>
+          <Button type="submit" className="h-10 w-full" disabled={codeLoading}>
+            {codeLoading ? (
+              <>
+                <Loader2 className="size-4 animate-spin" /> Verifying…
+              </>
+            ) : (
+              "Verify"
+            )}
+          </Button>
+        </form>
+      </AuthLayout>
+    );
+  }
 
   return (
     <AuthLayout
