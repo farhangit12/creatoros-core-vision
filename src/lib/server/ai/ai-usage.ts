@@ -85,6 +85,7 @@ export const getUsageSummary = createServerFn({ method: "GET" }).handler(async (
         totalGenerations: count(),
         totalTokens: sum(aiGenerations.totalTokens),
         totalCostCents: sum(aiGenerations.costCents),
+        totalCostMicros: sum(aiGenerations.costMicros),
       })
       .from(aiGenerations)
       .where(eq(aiGenerations.userId, userId)),
@@ -104,6 +105,7 @@ export const getUsageSummary = createServerFn({ method: "GET" }).handler(async (
     totalGenerations: totals[0]?.totalGenerations ?? 0,
     totalTokens: Number(totals[0]?.totalTokens ?? 0),
     totalCostCents: Number(totals[0]?.totalCostCents ?? 0),
+    totalCostMicros: Number(totals[0]?.totalCostMicros ?? 0),
     byFeature,
     byStatus,
   };

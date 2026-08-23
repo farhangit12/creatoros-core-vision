@@ -1,6 +1,7 @@
 import { getTextProvider, resolveOperation } from "./registry";
 import { generateText } from "./router";
 import { usageLogger } from "./usage";
+import { estimateTextCostMicros } from "./cost";
 import type { ChatMessage, GenerationRecord, ScriptOption } from "./types";
 
 export interface ChatParams {
@@ -39,6 +40,7 @@ export async function chat(params: ChatParams): Promise<ChatResult> {
     const completed = usageLogger.complete(generation.id, {
       output: message,
       usage: routed.result.usage,
+      costMicros: estimateTextCostMicros(routed.provider, routed.result.usage),
       provider: routed.provider,
       model: routed.model,
     });
@@ -103,6 +105,7 @@ export async function generateScript(params: GenerateScriptParams): Promise<Gene
     const completed = usageLogger.complete(generation.id, {
       output: options,
       usage: routed.result.usage,
+      costMicros: estimateTextCostMicros(routed.provider, routed.result.usage),
       provider: routed.provider,
       model: routed.model,
     });
@@ -149,6 +152,7 @@ export async function rewriteScript(params: RewriteScriptParams): Promise<Rewrit
     const completed = usageLogger.complete(generation.id, {
       output: routed.result.content,
       usage: routed.result.usage,
+      costMicros: estimateTextCostMicros(routed.provider, routed.result.usage),
       provider: routed.provider,
       model: routed.model,
     });

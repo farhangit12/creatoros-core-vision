@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { getUsageSummary, listGenerations } from "@/lib/server/ai/ai-usage";
 import { getCreditBalance } from "@/lib/server/credits";
 import { PLANS, isUnlimitedPlan, type PlanId } from "@/lib/credits";
+import { formatCostMicros } from "@/lib/ai/cost";
 
 export const Route = createFileRoute("/_app/ai-usage")({
   head: () => ({
@@ -90,13 +91,14 @@ function GenerationTable({ rows, emptyMessage }: { rows: GenerationRow[]; emptyM
               <th className="px-5 py-3 font-normal">Status</th>
               <th className="px-5 py-3 font-normal">Model</th>
               <th className="px-5 py-3 font-normal">Tokens</th>
+              <th className="px-5 py-3 font-normal">Est. cost</th>
               <th className="px-5 py-3 font-normal">Timestamp</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-5 py-6 text-center text-[12px] text-text-subtle">
+                <td colSpan={6} className="px-5 py-6 text-center text-[12px] text-text-subtle">
                   {emptyMessage}
                 </td>
               </tr>
@@ -111,6 +113,7 @@ function GenerationTable({ rows, emptyMessage }: { rows: GenerationRow[]; emptyM
                     </td>
                     <td className="px-5 py-3 text-text-muted">{g.model}</td>
                     <td className="px-5 py-3 font-mono text-foreground">{g.totalTokens ?? 0}</td>
+                    <td className="px-5 py-3 font-mono text-text-muted">{formatCostMicros(g.costMicros)}</td>
                     <td className="px-5 py-3 font-mono text-[11px] text-text-subtle">
                       {formatGenerationTimestamp(g.createdAt)}
                     </td>
@@ -191,6 +194,13 @@ function AiUsagePage() {
           </p>
           <p className="mt-2 text-[13px] text-text-muted">
             across Chat, Script Studio, Image Studio and Thumbnail Studio
+          </p>
+          <p className="mt-4 border-t border-border-subtle pt-4 text-[13px] text-text-muted">
+            <span className="font-mono text-foreground">{formatCostMicros(summary?.totalCostMicros)}</span>{" "}
+            estimated provider cost
+            <span className="ml-1.5 text-[11px] text-text-subtle">
+              (Groq pricing estimated from published rates; Cloudflare image cost is exact)
+            </span>
           </p>
         </div>
 

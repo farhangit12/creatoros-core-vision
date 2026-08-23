@@ -34,6 +34,7 @@ export interface GenerationRecord {
   output: unknown;
   usage: TokenUsage | null;
   costCents: number | null;
+  costMicros: number | null;
   errorMessage: string | null;
   durationMs: number | null;
   createdAt: string;

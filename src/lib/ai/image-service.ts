@@ -1,6 +1,7 @@
 import { getImageProvider, resolveOperation } from "./registry";
 import { usageLogger } from "./usage";
 import { withTimeout } from "./router";
+import { calculateCloudflareBatchCostMicros } from "./cost";
 import type { GenerationRecord, ImageAsset, ThumbnailVariation } from "./types";
 import type { ImageProviderAsset } from "./providers/types";
 
@@ -71,7 +72,10 @@ export async function generateImages(params: GenerateImagesParams): Promise<Gene
       "cloudflare/image.generate",
     );
     const assets = result.assets.map(toImageAsset);
-    const completed = usageLogger.complete(generation.id, { output: assets });
+    const completed = usageLogger.complete(generation.id, {
+      output: assets,
+      costMicros: calculateCloudflareBatchCostMicros(assets, Boolean(params.referenceImageUrl)),
+    });
     return { assets, generation: completed };
   } catch (error) {
     usageLogger.fail(generation.id, error instanceof Error ? error.message : "Image generation failed.");
@@ -138,7 +142,13 @@ export async function generateThumbnails(params: GenerateThumbnailsParams): Prom
         : "Alternative composition generated from the same prompt.",
       asset: toImageAsset(asset),
     }));
-    const completed = usageLogger.complete(generation.id, { output: variations });
+    const completed = usageLogger.complete(generation.id, {
+      output: variations,
+      costMicros: calculateCloudflareBatchCostMicros(
+        variations.map((v) => v.asset),
+        Boolean(params.referenceImageUrl),
+      ),
+    });
     return { variations, generation: completed };
   } catch (error) {
     usageLogger.fail(generation.id, error instanceof Error ? error.message : "Thumbnail generation failed.");
@@ -191,7 +201,13 @@ export async function createVariation(params: CreateVariationParams): Promise<Cr
       "cloudflare/image.variation",
     );
     const assets = result.assets.map(toImageAsset);
-    const completed = usageLogger.complete(generation.id, { output: assets });
+    // A variation is always derived from an existing source asset -- the
+    // reference-image (input-tile) cost always applies here, unlike
+    // generateImages/generateThumbnails where it's optional.
+    const completed = usageLogger.complete(generation.id, {
+      output: assets,
+      costMicros: calculateCloudflareBatchCostMicros(assets, true),
+    });
     return { assets, generation: completed };
   } catch (error) {
     usageLogger.fail(generation.id, error instanceof Error ? error.message : "Variation generation failed.");

@@ -249,6 +249,7 @@ export function FilesPage() {
           size: file.size,
           url: result.url,
           storageKey: result.storageKey,
+          cloudinaryResourceType: result.resourceType,
           ...(result.width ? { width: result.width } : {}),
           ...(result.height ? { height: result.height } : {}),
         },

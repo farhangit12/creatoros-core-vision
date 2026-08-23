@@ -59,6 +59,11 @@ const createFileSchema = z.object({
   size: z.number().int().positive().max(MAX_FILE_SIZE_BYTES),
   url: z.string().trim().url(),
   storageKey: z.string().trim().min(1).max(300),
+  /** Cloudinary's own real, server-side-detected resource_type ("image",
+   * "video", "raw") -- see files-upload-client.ts. Cross-checked below
+   * against what the claimed mimeType implies, since the browser-reported
+   * mimeType alone (derived from the filename, not content) can be spoofed. */
+  cloudinaryResourceType: z.string().trim().max(20).optional(),
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
   projectId: z.string().min(1).optional(),
@@ -72,6 +77,21 @@ export const createFileRecord = createServerFn({ method: "POST" })
     const classification = classifyMimeType(data.mimeType);
     if (!classification) {
       throw new Error(`Unsupported file type: ${data.mimeType}`);
+    }
+    // Real security check, not cosmetic: the claimed mimeType is
+    // browser-reported (spoofable -- an attacker can rename a disguised
+    // file so the browser reports whatever extension-derived MIME type they
+    // want). cloudinaryResourceType comes from Cloudinary's own real content
+    // inspection at upload time, so a mismatch here is a genuine signal the
+    // upload isn't what it claims to be -- reject and delete the asset
+    // rather than leave a suspicious file sitting in storage.
+    if (data.cloudinaryResourceType && data.cloudinaryResourceType !== classification.resourceType) {
+      await deleteFromCloudinary(data.storageKey, data.cloudinaryResourceType).catch(() => {
+        // Best-effort cleanup -- the rejection below is what matters.
+      });
+      throw new Error(
+        `File content doesn't match its claimed type (expected ${classification.resourceType}, got ${data.cloudinaryResourceType}).`,
+      );
     }
     if (data.projectId) {
       const [project] = await db

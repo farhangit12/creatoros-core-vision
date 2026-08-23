@@ -5,6 +5,12 @@ export interface CloudinaryUploadResult {
   url: string;
   storageKey: string;
   resourceType: string;
+  /** Cloudinary's own real, server-side-detected file format (e.g. "jpg",
+   * "pdf") -- not the browser-reported File.type, which is derived from the
+   * filename and doesn't verify actual content. Used server-side to catch a
+   * mismatch (a real MIME-spoofing signal), since the browser's own claim
+   * can't be trusted on its own. */
+  format?: string;
   width?: number;
   height?: number;
 }
@@ -43,6 +49,7 @@ export function uploadFileToCloudinary(
         secure_url?: string;
         public_id?: string;
         resource_type?: string;
+        format?: string;
         width?: number;
         height?: number;
         error?: { message?: string };
@@ -61,6 +68,7 @@ export function uploadFileToCloudinary(
         url: json.secure_url,
         storageKey: json.public_id,
         resourceType: json.resource_type ?? resourceType,
+        ...(json.format !== undefined ? { format: json.format } : {}),
         ...(json.width !== undefined ? { width: json.width } : {}),
         ...(json.height !== undefined ? { height: json.height } : {}),
       });

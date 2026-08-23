@@ -219,6 +219,10 @@ export const aiGenerations = pgTable(
     completionTokens: integer("completionTokens"),
     totalTokens: integer("totalTokens"),
     costCents: integer("costCents"),
+    // Real cost in millionths of a dollar (1,000,000 = $1.00) -- costCents
+    // above can't represent typical sub-cent per-request AI costs without
+    // rounding to 0. See drizzle/0010_generation_cost_micros.sql.
+    costMicros: bigint("costMicros", { mode: "number" }),
     durationMs: integer("durationMs"),
     createdAt: timestamp("createdAt").notNull().defaultNow(),
     completedAt: timestamp("completedAt"),

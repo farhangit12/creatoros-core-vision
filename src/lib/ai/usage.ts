@@ -15,6 +15,7 @@ export interface CompleteGenerationParams {
   output?: unknown;
   usage?: TokenUsage | null;
   costCents?: number | null;
+  costMicros?: number | null;
   /**
    * Overrides the provider/model recorded at start() -- used when router.ts
    * falls back to a secondary provider, so persistence reflects which
@@ -55,6 +56,7 @@ class InMemoryUsageLogger implements UsageLogger {
       output: null,
       usage: null,
       costCents: null,
+      costMicros: null,
       errorMessage: null,
       durationMs: null,
       createdAt: new Date().toISOString(),
@@ -75,6 +77,7 @@ class InMemoryUsageLogger implements UsageLogger {
       output: params.output ?? null,
       usage: params.usage ?? null,
       costCents: params.costCents ?? null,
+      costMicros: params.costMicros ?? null,
       completedAt,
       durationMs: new Date(completedAt).getTime() - new Date(existing.createdAt).getTime(),
     };

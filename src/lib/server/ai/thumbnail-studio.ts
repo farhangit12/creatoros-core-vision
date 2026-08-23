@@ -54,6 +54,7 @@ function toDbGeneration(userId: string, generation: GenerationRecord) {
     completionTokens: generation.usage?.completionTokens ?? null,
     totalTokens: generation.usage?.totalTokens ?? null,
     costCents: generation.costCents,
+    costMicros: generation.costMicros,
     durationMs: generation.durationMs,
     createdAt: new Date(generation.createdAt),
     completedAt: generation.completedAt ? new Date(generation.completedAt) : null,
