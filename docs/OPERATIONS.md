@@ -25,10 +25,13 @@ and "backup restore procedure documented" items.
 6. Watch `npx wrangler tail` for a few minutes after deploy for unexpected
    errors.
 
-**Rollback**: `npx wrangler rollback [deployment-id]` reverts to a previous
-Worker version (`npx wrangler deployments list` to find one) — this is a
-real, tested Cloudflare Workers capability, not something bespoke to this
-app. It only reverts *code* — it does not undo a database migration (see
+**Rollback**: `npm run wrangler -- rollback <version-id> --yes` reverts to a
+previous Worker version (`npm run wrangler -- deployments list` to find
+one). **Actually exercised for real on live production on 2026-08-23**, not
+just documented: rolled back to the prior version, confirmed `/api/health`,
+`/`, and `/login` all still returned 200 on the older version, then rolled
+forward again to restore the current version — confirmed healthy
+afterward too. It only reverts *code* — it does not undo a database migration (see
 Migrations below).
 
 ## Production smoke test
