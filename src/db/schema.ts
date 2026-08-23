@@ -9,6 +9,8 @@ export const user = pgTable("user", {
   role: text("role"),
   website: text("website"),
   bio: text("bio"),
+  // better-auth's twoFactor plugin's own field -- see drizzle/0009_two_factor.sql.
+  twoFactorEnabled: boolean("twoFactorEnabled").notNull().default(false),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull(),
 });
@@ -69,6 +71,31 @@ export const rateLimit = pgTable(
     lastRequest: bigint("lastRequest", { mode: "number" }).notNull(),
   },
   (table) => [index("rateLimit_key_idx").on(table.key)],
+);
+
+// better-auth's own two-factor plugin storage contract -- see
+// drizzle/0009_two_factor.sql and node_modules/better-auth/dist/plugins/
+// two-factor/schema.mjs. The Drizzle adapter needs a real table object
+// here to construct queries against, not just the raw SQL table -- without
+// this, every /two-factor/* endpoint fails with "The model 'twoFactor' was
+// not found in the schema object."
+export const twoFactor = pgTable(
+  "twoFactor",
+  {
+    id: text("id").primaryKey(),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    secret: text("secret").notNull(),
+    backupCodes: text("backupCodes").notNull(),
+    verified: boolean("verified").notNull().default(true),
+    failedVerificationCount: integer("failedVerificationCount").notNull().default(0),
+    lockedUntil: timestamp("lockedUntil"),
+  },
+  (table) => [
+    index("twoFactor_userId_idx").on(table.userId),
+    index("twoFactor_secret_idx").on(table.secret),
+  ],
 );
 
 export const auditLog = pgTable("audit_log", {
