@@ -188,7 +188,12 @@ function ImageStudioPage() {
   const [useCase, setUseCase] = useState(useCases[0] ?? "Post");
   const [ratio, setRatio] = useState((platform.aspectRatios[0] ?? "16:9"));
   const [style, setStyle] = useState(styles[0] ?? "Photoreal");
-  const [count, setCount] = useState<(typeof counts)[number]>(4);
+  // Was hardcoded to 4 -- landed a Free-plan account (limit 2) on an
+  // already-disabled Generate button on first load, before they'd touched
+  // anything. 1 works for every plan; the clamp effect below also catches a
+  // re-edit prefill (below) restoring a higher count from before a
+  // downgrade.
+  const [count, setCount] = useState<(typeof counts)[number]>(1);
 
   const [referencePreview, setReferencePreview] = useState<string | null>(null);
   const [referenceImageUrl, setReferenceImageUrl] = useState<string | null>(null);
@@ -241,6 +246,19 @@ function ImageStudioPage() {
   const canUpscale = hasFeature(planId, "image.upscale");
   const canRemoveBackground = hasFeature(planId, "image.removeBackground");
   const imageBatchLimit = maxImageBatch(planId);
+
+  // Catches the re-edit prefill above (line ~269) restoring a count from
+  // before a plan downgrade -- same "effective value re-derived where
+  // applied" pattern used for the upscale/removeBackground toggles
+  // elsewhere in this file, so a stale value can't silently land the user
+  // on a blocked Generate button.
+  useEffect(() => {
+    if (count > imageBatchLimit) {
+      const clamped = [...counts].reverse().find((c) => c <= imageBatchLimit) ?? counts[0];
+      setCount(clamped as (typeof counts)[number]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageBatchLimit]);
 
   useEffect(() => {
     if (!search.reedit) return;

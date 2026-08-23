@@ -38,6 +38,8 @@ import {
 import { useSession } from "@/lib/auth-client";
 import { getDashboardSummary, getRecentActivity } from "@/lib/server/dashboard";
 import { listGenerations, deleteGeneration } from "@/lib/server/ai/ai-usage";
+import { getCreditBalance } from "@/lib/server/credits";
+import { PLANS, formatCredits, isUnlimitedPlan, type PlanId } from "@/lib/credits";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({
@@ -154,6 +156,21 @@ function DashboardPage() {
     queryFn: () => getRecentActivityFn(),
     refetchInterval: 15000,
   });
+
+  // Same query key the Billing page uses ("credit-balance") -- shares its
+  // cache so this widget and Billing never show conflicting numbers. This
+  // card previously showed a hardcoded "Not available yet, once billing is
+  // connected" placeholder left over from before Billing & Credits was
+  // actually built -- real data existed and worked correctly on Billing/AI
+  // Usage the whole time, this dashboard card was just never updated to
+  // read it.
+  const getCreditBalanceFn = useServerFn(getCreditBalance);
+  const { data: creditAccount, isLoading: isLoadingCredits } = useQuery({
+    queryKey: ["credit-balance"],
+    queryFn: () => getCreditBalanceFn(),
+  });
+  const creditPlan = creditAccount ? (PLANS[creditAccount.planId as PlanId] ?? PLANS.free) : undefined;
+  const creditPlanUnlimited = creditAccount ? isUnlimitedPlan(creditAccount.planId as PlanId) : false;
 
   const stats = [
     { label: "Projects", value: isLoading ? "…" : String(summary?.projectsCount ?? 0), note: "total" },
@@ -423,12 +440,21 @@ function DashboardPage() {
 
         <div>
           <SectionLabel>AI credits</SectionLabel>
-          <div className="rounded-2xl border border-dashed border-border p-7">
-            <p className="text-[14px] text-foreground">Not available yet</p>
-            <p className="mt-2 max-w-sm text-[13px] leading-relaxed text-text-subtle">
-              Credit balance and plan details will show here once billing is
-              connected.
-            </p>
+          <div className="rounded-2xl border border-border p-7">
+            {isLoadingCredits ? (
+              <WireLine className="h-6 w-40" />
+            ) : creditAccount && creditPlan ? (
+              <>
+                <p className="text-[14px] font-medium text-foreground">{creditPlan.name} plan</p>
+                <p className="mt-2 font-mono text-[13px] text-accent-brand">
+                  {creditPlanUnlimited
+                    ? "Unlimited credits"
+                    : `${creditAccount.balance.toLocaleString()} of ${formatCredits(creditPlan)} remaining`}
+                </p>
+              </>
+            ) : (
+              <p className="text-[14px] text-foreground">Not available yet</p>
+            )}
             <div className="mt-6 flex flex-wrap gap-2">
               <Button asChild variant="outline" size="sm">
                 <Link to="/ai-usage">Usage breakdown</Link>

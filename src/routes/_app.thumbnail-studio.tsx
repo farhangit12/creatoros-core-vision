@@ -265,6 +265,17 @@ function ThumbnailStudioPage() {
   const canUpscale = hasFeature(planId, "thumbnail.upscale");
   const thumbnailBatchLimit = maxThumbnailBatch(planId);
 
+  // Same defensive clamp as image-studio.tsx: catches a re-edit prefill
+  // (line ~286) restoring a count from before a plan downgrade, so it can't
+  // silently land the user on a blocked Generate button.
+  useEffect(() => {
+    if (count > thumbnailBatchLimit) {
+      const clamped = [...counts].reverse().find((c) => c <= thumbnailBatchLimit) ?? counts[0];
+      setCount(clamped as (typeof counts)[number]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thumbnailBatchLimit]);
+
   useEffect(() => {
     if (!search.reedit) return;
     getGenerationFn({ data: { generationId: search.reedit } })
