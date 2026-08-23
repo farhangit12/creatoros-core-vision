@@ -13,6 +13,34 @@ Allow: /
 User-agent: *
 Allow: /
 
-# Update to the real production domain once one is configured --
-# see docs/OPERATIONS.md and public/sitemap.xml.
-Sitemap: https://creatoros.example.com/sitemap.xml
+# Session-gated app pages -- require auth, have no indexable content for a
+# crawler that isn't signed in, and would otherwise waste crawl budget or
+# show up as thin/duplicate results. Keep this list in sync with
+# src/lib/navigation.ts's live routes plus the routes it intentionally
+# leaves unlinked (see CLAUDE.md's Locked V1 Scope).
+Disallow: /dashboard
+Disallow: /chat
+Disallow: /script-studio
+Disallow: /image-studio
+Disallow: /thumbnail-studio
+Disallow: /projects
+Disallow: /files
+Disallow: /content-planner
+Disallow: /library
+Disallow: /ai-usage
+Disallow: /billing
+Disallow: /settings
+Disallow: /profile
+Disallow: /automation
+Disallow: /brand-kit
+Disallow: /notifications
+Disallow: /upcoming
+Disallow: /templates
+Disallow: /repurpose
+Disallow: /knowledge-base
+Disallow: /analytics
+Disallow: /ai-memory
+Disallow: /video-studio
+Disallow: /api/
+
+Sitemap: https://creatoros-core-vision.vercel.app/sitemap.xml

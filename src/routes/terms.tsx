@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { PublicNav } from "@/components/public/public-nav";
 import { PublicFooter } from "@/components/public/public-footer";
-import { canonicalLinks } from "@/lib/canonical";
+import { canonicalLinks, ogUrlMeta } from "@/lib/canonical";
 
 export const Route = createFileRoute("/terms")({
   head: () => ({
@@ -12,6 +12,12 @@ export const Route = createFileRoute("/terms")({
         name: "description",
         content: "The terms that govern your use of CreatorOS AI.",
       },
+      { property: "og:title", content: "Terms of Service — CreatorOS AI" },
+      {
+        property: "og:description",
+        content: "The terms that govern your use of CreatorOS AI.",
+      },
+      ...ogUrlMeta("/terms"),
     ],
     links: canonicalLinks("/terms"),
   }),

@@ -1,44 +1,45 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Static sitemap of this app's public, unauthenticated routes only --
-  everything under /_app (dashboard, studios, settings, etc.) requires a
-  session and is intentionally excluded, same as it's excluded from search
-  indexing by nature of requiring auth.
-
-  Absolute URLs here use a placeholder origin because no production custom
-  domain has been purchased/configured yet (see docs/OPERATIONS.md). Update
-  every <loc> to the real domain once one exists -- Search Console
-  verification is blocked on the same prerequisite.
+  everything under session-gated pages (dashboard, studios, settings, etc.)
+  requires a session and is intentionally excluded, same as it's excluded
+  from search indexing by nature of requiring auth (see robots.txt).
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://creatoros.example.com/</loc>
+    <loc>https://creatoros-core-vision.vercel.app/</loc>
+    <lastmod>2026-08-23</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://creatoros.example.com/login</loc>
+    <loc>https://creatoros-core-vision.vercel.app/login</loc>
+    <lastmod>2026-08-23</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://creatoros.example.com/signup</loc>
+    <loc>https://creatoros-core-vision.vercel.app/signup</loc>
+    <lastmod>2026-08-23</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
+    <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://creatoros.example.com/privacy</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  <url>
-    <loc>https://creatoros.example.com/terms</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.2</priority>
-  </url>
-  <url>
-    <loc>https://creatoros.example.com/help</loc>
+    <loc>https://creatoros-core-vision.vercel.app/help</loc>
+    <lastmod>2026-08-23</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
+  </url>
+  <url>
+    <loc>https://creatoros-core-vision.vercel.app/privacy</loc>
+    <lastmod>2026-08-23</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  <url>
+    <loc>https://creatoros-core-vision.vercel.app/terms</loc>
+    <lastmod>2026-08-23</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.2</priority>
   </url>
 </urlset>

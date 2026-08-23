@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { PublicNav } from "@/components/public/public-nav";
 import { PublicFooter } from "@/components/public/public-footer";
-import { canonicalLinks } from "@/lib/canonical";
+import { canonicalLinks, ogUrlMeta } from "@/lib/canonical";
 
 export const Route = createFileRoute("/privacy")({
   head: () => ({
@@ -12,6 +12,12 @@ export const Route = createFileRoute("/privacy")({
         name: "description",
         content: "How CreatorOS AI collects, uses and protects your data.",
       },
+      { property: "og:title", content: "Privacy Policy — CreatorOS AI" },
+      {
+        property: "og:description",
+        content: "How CreatorOS AI collects, uses and protects your data.",
+      },
+      ...ogUrlMeta("/privacy"),
     ],
     links: canonicalLinks("/privacy"),
   }),

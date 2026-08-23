@@ -94,9 +94,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content: "The creative operating system for independent creators.",
       },
       { property: "og:type", content: "website" },
+      { property: "og:site_name", content: "CreatorOS AI" },
       { property: "og:image", content: absoluteAssetUrl("/favicon.png") },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:image", content: absoluteAssetUrl("/favicon.png") },
+      { name: "robots", content: "index, follow" },
+      {
+        name: "google-site-verification",
+        content: "cRjZBdhci1APkBVc6iCNb1OQvOdJBA8uRINqvCXfbo0",
+      },
     ],
     links: [
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -114,6 +120,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: appCss,
       },
       { rel: "icon", href: "/favicon.png", type: "image/png" },
+      { rel: "apple-touch-icon", href: "/favicon.png" },
     ],
   }),
   shellComponent: RootShell,

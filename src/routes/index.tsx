@@ -13,22 +13,78 @@ import {
 import { PublicNav } from "@/components/public/public-nav";
 import { PublicFooter } from "@/components/public/public-footer";
 import { Button } from "@/components/ui/button";
-import { canonicalLinks } from "@/lib/canonical";
+import { canonicalLinks, ogUrlMeta, absoluteUrl } from "@/lib/canonical";
+import { PLANS } from "@/lib/credits";
+
+/**
+ * JSON-LD structured data for the homepage -- rendered via TanStack Router's
+ * built-in "script:ld+json" meta key (see headContentUtils.js: any meta
+ * entry with this key is emitted as a real <script type="application/ld+json">
+ * tag, HTML-escaped). Helps search engines show CreatorOS as a real software
+ * product (name, category, pricing) rather than just an untyped page.
+ */
+function structuredData() {
+  const siteUrl = absoluteUrl("/");
+  return [
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      name: "CreatorOS AI",
+      url: siteUrl,
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      name: "CreatorOS AI",
+      applicationCategory: "BusinessApplication",
+      operatingSystem: "Web",
+      url: siteUrl,
+      description:
+        "AI-powered workspace for content creators: script writing, AI chat, image and thumbnail generation, content planning and file organisation in one place.",
+      offers: (Object.values(PLANS)).map((plan) => ({
+        "@type": "Offer",
+        name: `${plan.name} plan`,
+        price: String(plan.monthlyPriceUsd),
+        priceCurrency: "USD",
+        ...(plan.monthlyPriceUsd === 0 ? {} : { billingIncrement: "P1M" }),
+      })),
+    },
+  ];
+}
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "CreatorOS AI — Everything you create. One workspace." },
+      // Cast needed: this project's pinned @tanstack/react-router version
+      // types head().meta narrower (raw HTMLMetaElement props) than the
+      // "script:ld+json" key the framework's own runtime actually renders as
+      // a real <script type="application/ld+json"> tag -- confirmed by
+      // reading node_modules/@tanstack/react-router/dist/esm/headContentUtils.js
+      // directly, per this project's "verify library APIs" convention.
+      ...(structuredData().map((data) => ({ "script:ld+json": data })) as unknown as Array<{
+        name: string;
+        content: string;
+      }>),
+      {
+        title:
+          "CreatorOS AI — AI Content Creation & Planning Workspace for Creators",
+      },
       {
         name: "description",
         content:
-          "Plan your content, create with AI, and keep every script, image and file together in one workspace.",
+          "CreatorOS is an AI-powered workspace for content creators: write scripts, chat with AI, generate images and thumbnails, plan your content calendar and keep every file organised in one place.",
+      },
+      {
+        name: "keywords",
+        content:
+          "AI content creation, AI script writer, AI thumbnail generator, content planner, creator workspace, AI image generator for creators",
       },
       { property: "og:title", content: "CreatorOS AI" },
       {
         property: "og:description",
         content: "Everything you create. One workspace.",
       },
+      ...ogUrlMeta("/"),
     ],
     links: canonicalLinks("/"),
   }),

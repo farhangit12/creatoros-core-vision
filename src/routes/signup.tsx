@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
-import { canonicalLinks } from "@/lib/canonical";
+import { canonicalLinks, ogUrlMeta } from "@/lib/canonical";
 
 export const Route = createFileRoute("/signup")({
   head: () => ({
@@ -25,6 +25,7 @@ export const Route = createFileRoute("/signup")({
         property: "og:description",
         content: "Set up your CreatorOS AI workspace in under a minute.",
       },
+      ...ogUrlMeta("/signup"),
     ],
     links: canonicalLinks("/signup"),
   }),

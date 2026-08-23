@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { authClient } from "@/lib/auth-client";
-import { canonicalLinks } from "@/lib/canonical";
+import { canonicalLinks, ogUrlMeta } from "@/lib/canonical";
 
 // better-auth's own OAuth error codes (see node_modules/better-auth/dist/state.mjs's
 // StateError codes and oauth2/state.mjs's parseState) -- friendlier text for the
@@ -41,6 +41,7 @@ export const Route = createFileRoute("/login")({
         property: "og:description",
         content: "Sign in to your CreatorOS AI workspace.",
       },
+      ...ogUrlMeta("/login"),
     ],
     links: canonicalLinks("/login"),
   }),

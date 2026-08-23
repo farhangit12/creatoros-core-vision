@@ -1,11 +1,28 @@
-export function canonicalLinks(pathname: string): Array<{ rel: "canonical"; href: string }> {
+/**
+ * Absolute URL for the given pathname on the real deployed site, or
+ * undefined when SITE_URL isn't configured -- callers must skip emitting
+ * canonical/og:url tags entirely rather than fall back to a fake domain,
+ * since a wrong canonical actively hurts indexing more than a missing one.
+ */
+export function absoluteUrl(pathname: string): string | undefined {
   const siteUrl = process.env["SITE_URL"];
-  if (!siteUrl) return [];
+  if (!siteUrl) return undefined;
   try {
-    return [{ rel: "canonical", href: new URL(pathname, siteUrl).toString() }];
+    return new URL(pathname, siteUrl).toString();
   } catch {
-    return [];
+    return undefined;
   }
+}
+
+export function canonicalLinks(pathname: string): Array<{ rel: "canonical"; href: string }> {
+  const href = absoluteUrl(pathname);
+  return href ? [{ rel: "canonical", href }] : [];
+}
+
+/** og:url meta entry for the given pathname, or [] when SITE_URL isn't set. */
+export function ogUrlMeta(pathname: string): Array<{ property: "og:url"; content: string }> {
+  const href = absoluteUrl(pathname);
+  return href ? [{ property: "og:url", content: href }] : [];
 }
 
 /**
