@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { auth } from "@/lib/auth";
 import { user, userSettings } from "@/db/schema";
 import { tones } from "@/lib/creator-data";
-import { createUploadSignature, type UploadSignature } from "@/lib/server/files-storage";
+import { createUploadSignature, deleteFromCloudinaryByUrl, isOwnCloudinaryUrl, type UploadSignature } from "@/lib/server/files-storage";
 
 export type UserProfileRecord = typeof user.$inferSelect;
 export type UserSettingsRecord = typeof userSettings.$inferSelect;
@@ -115,6 +115,33 @@ export const updateUserAvatar = createServerFn({ method: "POST" })
       .returning();
     return assertRow(updated, "Failed to update avatar.");
   });
+
+/**
+ * Clears the user's avatar entirely -- e.g. someone who signed up with
+ * Google and doesn't want their Google profile picture used here either.
+ * Only ever attempts a Cloudinary delete for a URL that's actually ours
+ * (isOwnCloudinaryUrl) -- user.image can also be a Google-hosted OAuth
+ * picture, which must never be sent to our Cloudinary destroy endpoint.
+ * Same guard already used for this exact reason during account deletion
+ * (see auth.ts's cleanupAvatar).
+ */
+export const removeUserAvatar = createServerFn({ method: "POST" }).handler(async () => {
+  const userId = await requireUserId();
+  const [current] = await db.select({ image: user.image }).from(user).where(eq(user.id, userId));
+  if (current?.image && isOwnCloudinaryUrl(current.image)) {
+    try {
+      await deleteFromCloudinaryByUrl(current.image, "image");
+    } catch {
+      // Best-effort -- an orphaned Cloudinary asset must never block removing the avatar.
+    }
+  }
+  const [updated] = await db
+    .update(user)
+    .set({ image: null, updatedAt: new Date() })
+    .where(eq(user.id, userId))
+    .returning();
+  return assertRow(updated, "Failed to remove avatar.");
+});
 
 export const getUserSettings = createServerFn({ method: "GET" }).handler(async () => {
   const userId = await requireUserId();

@@ -21,7 +21,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { authClient } from "@/lib/auth-client";
-import { getAvatarUploadSignature, getUserProfile, updateUserAvatar, updateUserProfile } from "@/lib/server/settings";
+import { getAvatarUploadSignature, getUserProfile, removeUserAvatar, updateUserAvatar, updateUserProfile } from "@/lib/server/settings";
 import { uploadFileToCloudinary } from "@/lib/files-upload-client";
 import { toAvatarUrl } from "@/lib/files";
 
@@ -191,8 +191,10 @@ function ProfilePage() {
   const updateUserProfileFn = useServerFn(updateUserProfile);
   const getAvatarUploadSignatureFn = useServerFn(getAvatarUploadSignature);
   const updateUserAvatarFn = useServerFn(updateUserAvatar);
+  const removeUserAvatarFn = useServerFn(removeUserAvatar);
   const [signingOut, setSigningOut] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [removingAvatar, setRemovingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const handleAvatarFile = async (file: File) => {
@@ -218,6 +220,22 @@ function ProfilePage() {
       });
     } finally {
       setUploadingAvatar(false);
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    setRemovingAvatar(true);
+    try {
+      await removeUserAvatarFn();
+      queryClient.invalidateQueries({ queryKey: PROFILE_QUERY_KEY });
+      await authClient.getSession();
+      toast.success("Avatar removed");
+    } catch (error) {
+      toast.error("Couldn't remove your avatar.", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setRemovingAvatar(false);
     }
   };
 
@@ -407,20 +425,38 @@ function ProfilePage() {
               e.target.value = "";
             }}
           />
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!editing || uploadingAvatar}
-            onClick={() => avatarInputRef.current?.click()}
-          >
-            {uploadingAvatar ? (
-              <>
-                <Loader2 className="size-3.5 animate-spin" /> Uploading…
-              </>
-            ) : (
-              "Change avatar"
-            )}
-          </Button>
+          <div className="flex shrink-0 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!editing || uploadingAvatar}
+              onClick={() => avatarInputRef.current?.click()}
+            >
+              {uploadingAvatar ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" /> Uploading…
+                </>
+              ) : (
+                "Change avatar"
+              )}
+            </Button>
+            {profile?.image ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!editing || removingAvatar}
+                onClick={handleRemoveAvatar}
+              >
+                {removingAvatar ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" /> Removing…
+                  </>
+                ) : (
+                  "Remove"
+                )}
+              </Button>
+            ) : null}
+          </div>
         </section>
       )}
 
