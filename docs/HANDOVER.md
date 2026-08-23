@@ -96,13 +96,14 @@ Being upfront about what's genuinely unfinished, not glossed over:
   your email" but the email itself won't arrive until domain verification
   is done. Signup itself still succeeds either way (the email send is
   fire-and-forget); only actually signing in with email/password is
-  blocked until verified. Google OAuth is unaffected. **73 of 78 existing
-  accounts at time of writing have `emailVerified: false`** (mostly
-  throwaway QA test accounts from this project's testing history) and are
-  now locked out of email/password sign-in until either verified for real
-  or grandfathered in via a one-time reviewed `UPDATE "user" SET
-  "emailVerified" = true WHERE "emailVerified" = false` — not run
-  automatically, needs an explicit decision.
+  blocked until verified. Google OAuth is unaffected. **All existing
+  accounts as of 2026-08-23 were grandfathered in** via a one-time reviewed
+  `UPDATE "user" SET "emailVerified" = true WHERE "emailVerified" = false`
+  (74 rows at the time, mostly throwaway QA test accounts from this
+  project's testing history) — confirmed via Neon afterward: 79/79 users
+  `emailVerified: true`. Any account created *after* that point still goes
+  through the real verification flow as intended; this was a one-time
+  migration, not a standing bypass.
 - **Resend has no verified sending domain** — password-reset and feedback
   emails will 403 until the buyer verifies a domain at
   `resend.com/domains` and updates `FROM_ADDRESS` in
