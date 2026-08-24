@@ -4,7 +4,7 @@ This file is the authoritative running summary of the project for Claude Code ac
 
 **Maintenance rule:** update this file whenever a task reaches fully completed + verified + user-approved status — not before (don't record in-progress or unverified work here). Move the task from "Not yet built"/"Next Likely Work" into the appropriate section (Build Phase History if it's a phase-sized chunk, or the relevant topical section otherwise), including what changed, how it was verified, and any known limitations — matching the level of detail already used below.
 
-Branch: `feature/v1-functional`. This project is Lovable-connected (see `AGENTS.md`) — avoid force-push/rebase/amend on already-pushed commits; pushes to the connected branch sync back into the Lovable editor.
+Branch: `main` — this is now the real, deployed production branch (see "Vercel Cutover" below). `feature/v1-functional` still exists and is still Lovable-connected (see `AGENTS.md`), but as of 2026-08-24 it is deliberately frozen/no longer pushed to, per explicit user instruction to keep Lovable out of the real product going forward — do not push to it without asking first. `platform/vercel` is superseded by `main` (fast-forwarded into it) and can be treated as merged/retired.
 
 ## Stack
 
@@ -493,7 +493,7 @@ Closes a real account-takeover gap flagged during a "what's actually necessary f
 
 `npx tsc --noEmit` and `npm run build`: both clean. Not committed — ready for review alongside the Vercel Migration work below.
 
-## Vercel Migration (COMPLETE, verified live, branch `platform/vercel` — not merged, 2026-08-22/23)
+## Vercel Migration (COMPLETE, verified live, branch `platform/vercel`, 2026-08-22/23 — merged into `main` 2026-08-24, see Vercel Cutover below)
 
 Migrates the deploy target from Cloudflare Workers to Vercel's standard Node.js runtime, motivated by the "Final Handover Push" section's accepted limitation above: a ~8.2–8.5s retry-driven latency tax on most Cloudflare requests, caused by a `cloudflare:sockets`-specific `pg` transport stall. All work done on a new branch, `platform/vercel`, created from `feature/v1-functional`'s tip — the live Cloudflare Worker and `feature/v1-functional` (Lovable-connected) were never touched, per the user's explicit "nothing bad should happen" safety requirement. Merging into `feature/v1-functional` (or cutting real traffic over) is a separate, not-yet-made decision.
 
@@ -521,15 +521,33 @@ Two real bugs were caught by `tsc --noEmit` before this was ever considered done
 
 `npx tsc --noEmit` and `npm run build`: clean. Committed `a6412f5`, pushed to `origin/platform/vercel`.
 
-**Status: still on `platform/vercel`, not merged into `feature/v1-functional`, not cut over to real production traffic** — merging/cutover remains a separate, explicit future decision.
+**Status: superseded by the Vercel Cutover below (2026-08-24)** — `platform/vercel` was fast-forward-merged into `main` and `main` is now the real deployed production branch.
+
+## Vercel Cutover (COMPLETE, verified live, 2026-08-24)
+
+Executes the "Vercel cutover decision" the Migration section above left open. User's explicit constraint going in: keep Lovable completely out of it (`feature/v1-functional` is Lovable-connected, and the user does not want Lovable's editor syncing/interfering with the real product anymore — it was only ever used for early design work).
+
+**What happened:**
+- Diff-checked `platform/vercel` against `feature/v1-functional` first rather than assuming it was just "the Vercel migration on top of" — it had actually diverged to **46 commits ahead of `main`** / 13 ahead of `feature/v1-functional`'s tip, all as a clean fast-forward (no conflicts either direction). `feature/v1-functional` had nothing `platform/vercel` lacked.
+- Checked `main`: last touched 2026-08-15 (`9002d79`, "finalize v1 ui scope"), not Lovable-connected, and — like `feature/v1-functional` — a strict ancestor of `platform/vercel` (0 commits of its own). This made `main` the obvious cutover target: real production branch, zero Lovable exposure.
+- Fast-forwarded `main` → `b2b464c` (`git merge --ff-only`) and pushed to `origin/main`. `feature/v1-functional` was never touched — no push, no merge into it, Lovable sees nothing from this.
+- `npx tsc --noEmit` on the merged result: 0 errors.
+- **The push to `main` auto-triggered a real Vercel production deployment** via the existing git integration from the Migration phase (not a manual `vercel deploy --prod` — confirmed via `vercel inspect` that the new deployment's aliases include `creatoros-core-vision.vercel.app`, the real production URL, dated seconds after the push). Live-verified immediately after: `/api/health` → `200 {"status":"ok"}` (real DB `SELECT 1`), `/` → 200, `/login` → 200, `/dashboard` → 307 (correct unauthenticated redirect for a session-gated route).
+- Live Cloudflare Worker was left running, untouched, still serving its own separate `workers.dev`-style URL — this cutover did not decommission it, just made Vercel/`main` the actively-developed line going forward. Retiring Cloudflare is a separate future decision.
+
+**Honest gap surfaced, not fixed in this pass:** the 13 commits `platform/vercel` had accumulated beyond what this file documented (`f9c2f16` real 2FA + dependency scanning + billing dunning, `05ca40b` dashboard credit widget + Image Studio default fix, `e259c13` real per-generation cost estimation, `8f07888`/`a2d023b` 2FA follow-up fixes, `1bb4882` real "Remove avatar", `b2b464c` real domain/SEO/structured data/GSC verification, plus two docs commits recording a backup-restore drill and a wrangler-rollback exercise) came from a prior session that never wrote its own CLAUDE.md sections before ending — a gap in following this file's own maintenance rule, not a code problem. All of it is real, committed, and now live on `main`/Vercel, but **this file does not yet carry the individual what-changed/how-verified detail for those 13 commits** the way every other section does. A future session should read those commits' diffs/messages and backfill proper sections — do not assume undocumented means unverified, but also don't cite specifics (e.g. exact 2FA verification steps) that aren't written down anywhere yet.
+
+Also fixed in passing: `.gitignore` gained `.env*`/`.tmp-bin/`/`.claude/` somewhere in the 13-commit gap — confirmed live that `.env` was never committed in any branch's history (no leak), but this closes what had been a real latent risk (untracked-but-unignored secrets file).
+
+`.vercel/` (local Vercel CLI project link, `project.json` — only holds a `projectId`/`orgId`, no secrets) is still not in `.gitignore` — low-risk, flagged not fixed, since it was untracked and harmless either way.
 
 ## Next Likely Work
 
-Almost everything in this doc is done, verified, committed, and pushed to `feature/v1-functional`: Billing & Credits (`715e708`), Google OAuth fixes + Plan Feature Gating (`c440d2f`), real Polar.sh sandbox payment integration + draft-autosave removal + platform-picker cleanup (`10fc467`), the real-logo favicon swap (`cb44465`), production readiness remediation + handover-prep fixes (`7f083d4`), and the auth/SSR reliability fix above (uncommitted). Core product surface (landing, auth, dashboard, all 4 AI studios, Library, Files, Content Planner, Settings, AI Usage, Billing) is fully functional end-to-end on the real deployed Worker, including through a genuine reliability incident and fix.
+Core product surface (landing, auth, dashboard, all 4 AI studios, Library, Files, Content Planner, Settings, AI Usage, Billing) is fully functional end-to-end and now live on **Vercel via `main`** (see Vercel Cutover above) — Cloudflare (`feature/v1-functional`) remains up in parallel but is no longer the actively-developed line.
 
 **What's genuinely left, in order:**
-1. **Resend domain verification** — deferred by user's own choice (no domain yet); treated as the eventual buyer's setup step, same posture as Polar's production keys. (Blocks real email delivery for both password reset and the new email-verification-enforcement flow below — see "Email verification enforcement" section.)
-2. **Buyer handover logistics** (outside the 137-item checklist) — a plan for transferring or rotating the live Neon/Cloudflare/Cloudinary/Groq/Polar accounts and credentials to the buyer, or walking them through `docs/OPERATIONS.md`'s deploy steps against their own freshly-provisioned accounts. Not started.
-3. **The ~8s retry-driven latency** noted above — confirmed Cloudflare-Workers-specific and eliminated on the `platform/vercel` branch (see Vercel Migration section above); still present on the live Cloudflare site until/unless a cutover happens.
-4. **Vercel cutover decision** — `platform/vercel` is fully built and live-verified (including the ~8s latency fix and the `backgroundTasks`/`waitUntil` follow-up), but not merged into `feature/v1-functional` and no real traffic has moved off Cloudflare. Next step is the user's own call on if/when to merge and cut over.
+1. **Backfill CLAUDE.md sections for the 13-commit documentation gap** (2FA, billing dunning, cost estimation, dependency scanning, "Remove avatar", real domain/SEO — see Vercel Cutover's "Honest gap surfaced" note above) — the work is real and live, just not written up here yet with the usual what-changed/how-verified detail.
+2. **Resend domain verification** — deferred by user's own choice (no domain yet, doesn't want to spend money on it right now); treated as the eventual buyer's setup step, same posture as Polar's production keys. (Blocks real email delivery for both password reset and email-verification-enforcement.)
+3. **Buyer handover logistics** (outside the 137-item checklist) — a plan for transferring or rotating the live Neon/Cloudflare/Cloudinary/Groq/Polar/Vercel accounts and credentials to the buyer, or walking them through `docs/OPERATIONS.md`'s deploy steps against their own freshly-provisioned accounts. Not started.
+4. **Cloudflare Worker retirement decision** — still live and untouched post-cutover; whether/when to decommission it (or keep it as a documented fallback) is an open, not-yet-made call.
 **Dropped from this list**: a seller-side Polar business/KYC review was previously listed here, but `docs/HANDOVER.md`'s accounts table already correctly assigns that to the *buyer* (their own Polar org, their own KYC) — sandbox already proves the payment integration works end-to-end. Doing KYC under the seller's own identity would add nothing to the sale, so it's removed as stale rather than carried forward.
