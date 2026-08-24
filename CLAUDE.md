@@ -1,10 +1,10 @@
 # CreatorOS — Project Context
 
-This file is the authoritative running summary of the project for Claude Code across sessions. It supersedes `README.md`/`AGENTS.md` wherever they conflict (those describe an older, broader, now-abandoned scope).
+This file is the authoritative running summary of the project for Claude Code across sessions. It supersedes `README.md` wherever it conflicts (it describes an older, broader, now-abandoned scope in places).
 
 **Maintenance rule:** update this file whenever a task reaches fully completed + verified + user-approved status — not before (don't record in-progress or unverified work here). Move the task from "Not yet built"/"Next Likely Work" into the appropriate section (Build Phase History if it's a phase-sized chunk, or the relevant topical section otherwise), including what changed, how it was verified, and any known limitations — matching the level of detail already used below.
 
-Branch: `main` — this is now the real, deployed production branch (see "Vercel Cutover" below). `feature/v1-functional` still exists and is still Lovable-connected (see `AGENTS.md`), but as of 2026-08-24 it is deliberately frozen/no longer pushed to, per explicit user instruction to keep Lovable out of the real product going forward — do not push to it without asking first. `platform/vercel` is superseded by `main` (fast-forwarded into it) and can be treated as merged/retired.
+Branch: `main` — this is now the real, deployed production branch (see "Vercel Cutover" below). `feature/v1-functional` still exists and is still Lovable-connected, but as of 2026-08-24 it is deliberately frozen/no longer pushed to, per explicit user instruction to keep Lovable out of the real product going forward — do not push to it without asking first. `platform/vercel` is superseded by `main` (fast-forwarded into it) and can be treated as merged/retired. As of 2026-08-24, `AGENTS.md` (the Lovable connection notice) and `.lovable/` (Lovable's editor metadata) were removed from the repo, along with the dead `src/lib/lovable-error-reporting.ts` shim (only ever functioned inside Lovable's own preview iframe) — done for a clean public repo, per explicit user request not to surface Lovable usage. The one Lovable-origin piece kept deliberately is the `@lovable.dev/vite-tanstack-config` npm dependency in `package.json`/`vite.config.ts` — it's load-bearing (the actual Vite/TanStack Start build config), not cosmetic, and removing it would break the build.
 
 ## Stack
 
