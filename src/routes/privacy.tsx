@@ -55,7 +55,7 @@ function PrivacyPage() {
             Privacy Policy
           </h1>
           <p className="mt-4 max-w-2xl text-[14px] leading-relaxed text-text-muted">
-            Effective date: 20 August 2026.
+            Effective date: 5 September 2026.
           </p>
         </section>
 
@@ -64,7 +64,7 @@ function PrivacyPage() {
             <p>
               CreatorOS AI ("CreatorOS", "we", "us") is a workspace for
               planning, creating and organising content. This policy is
-              operated by CreatorOS Inc.
+              operated by Md Farhan Akhter, founder of CreatorOS AI.
             </p>
           </Section>
 
@@ -105,9 +105,24 @@ function PrivacyPage() {
 
           <Section title="Cookies and local storage">
             <p>
-              We use a session cookie to keep you signed in, and local
-              storage in your browser to remember your theme preference. We
-              do not use third-party advertising or tracking cookies.
+              We use two categories, and only one is optional:
+            </p>
+            <ul className="list-disc space-y-1 pl-5">
+              <li><strong className="text-foreground">Necessary</strong> — a session cookie that keeps you signed in. This can't be turned off; it's required for the account features you're using.</li>
+              <li><strong className="text-foreground">Preferences</strong> — local storage caching your theme choice so it applies instantly on your next visit. This is optional: you can accept or reject it from the cookie banner shown on your first visit, or change your mind at any time by clearing your browser's local storage for this site.</li>
+            </ul>
+            <p>
+              We do not use third-party advertising or tracking cookies of
+              any kind.
+            </p>
+          </Section>
+
+          <Section title="We do not sell your data">
+            <p>
+              We do not sell or share your personal information to third
+              parties for money or for their own advertising purposes. Data
+              is shared only with the infrastructure processors listed above,
+              solely to operate CreatorOS on your behalf.
             </p>
           </Section>
 
@@ -132,16 +147,29 @@ function PrivacyPage() {
 
           <Section title="Your rights">
             <p>
-              Depending on where you live, you may have rights to access,
-              correct or delete your personal data, or to object to certain
-              processing. To exercise these rights, contact us at{" "}
+              Depending on where you live (for example under the EU/UK GDPR
+              or the California CCPA/CPRA), you may have the right to:
+            </p>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>Know what personal data we hold about you and request a copy (access / right to know).</li>
+              <li>Correct inaccurate personal data (rectification).</li>
+              <li>Delete your personal data (erasure / right to delete) — you can do this yourself at any time from Settings, with no need to contact us.</li>
+              <li>Receive your data in a portable format (data portability).</li>
+              <li>Object to, or request we restrict, certain processing.</li>
+              <li>Not be discriminated against for exercising any of these rights.</li>
+            </ul>
+            <p>
+              As stated above, we do not sell or share your personal
+              information, so there is no "opt-out of sale" to request. To
+              exercise any of these rights, contact us at{" "}
               <a
                 href="mailto:edev351@gmail.com"
                 className="text-accent-brand hover:underline"
               >
                 edev351@gmail.com
               </a>
-              .
+              . We'll respond within a reasonable time and may need to verify
+              your identity first.
             </p>
           </Section>
 

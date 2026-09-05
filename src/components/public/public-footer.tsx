@@ -27,6 +27,9 @@ export function PublicFooter() {
           <Link to="/terms" className="transition-colors hover:text-foreground">
             Terms of Service
           </Link>
+          <Link to="/accessibility" className="transition-colors hover:text-foreground">
+            Accessibility
+          </Link>
           <Link to="/help" className="transition-colors hover:text-foreground">
             Help &amp; FAQ
           </Link>
