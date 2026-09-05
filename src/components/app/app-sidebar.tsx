@@ -58,16 +58,6 @@ export function SidebarNav({
           <Monogram className="size-7 shrink-0" />
           {!isCollapsed && <Wordmark />}
         </Link>
-        {!isCollapsed && onToggle ? (
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-label="Collapse sidebar"
-            className="grid size-7 shrink-0 place-items-center rounded-md text-text-subtle transition-colors duration-150 hover:bg-surface-2 hover:text-foreground"
-          >
-            <PanelLeftClose className="size-4" />
-          </button>
-        ) : null}
       </div>
 
       <nav
@@ -155,20 +145,32 @@ export function SidebarNav({
       </nav>
 
       <div className="shrink-0 border-t border-border-subtle p-3">
-        {isCollapsed && onToggle ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={onToggle}
-                aria-label="Expand sidebar"
-                className="mb-2 grid h-9 w-full place-items-center rounded-lg text-text-subtle transition-colors hover:bg-surface-2 hover:text-foreground"
-              >
-                <PanelLeftOpen className="size-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">Expand sidebar</TooltipContent>
-          </Tooltip>
+        {onToggle ? (
+          isCollapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onToggle}
+                  aria-label="Expand sidebar"
+                  className="mb-2 grid h-9 w-full place-items-center rounded-lg text-text-subtle transition-colors hover:bg-surface-2 hover:text-foreground"
+                >
+                  <PanelLeftOpen className="size-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Expand sidebar</TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-label="Collapse sidebar"
+              className="mb-2 flex h-9 w-full items-center gap-3 rounded-lg px-2.5 text-[13px] text-text-subtle transition-colors hover:bg-surface-2 hover:text-foreground"
+            >
+              <PanelLeftClose className="size-4 shrink-0" />
+              <span>Collapse sidebar</span>
+            </button>
+          )
         ) : null}
 
         <Link
