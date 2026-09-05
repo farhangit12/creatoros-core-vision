@@ -1,19 +1,27 @@
 version: 2
 updates:
-  # Groups routine version-only bumps to avoid PR spam; security patches
-  # always get their own PR regardless of grouping (Dependabot's own
-  # documented behavior for security-update PRs).
+  # One grouped PR per ecosystem, monthly, to keep noise low on a project
+  # in maintenance / handover mode. Security-update PRs are still opened
+  # individually and immediately, regardless of this grouping (Dependabot's
+  # own documented behaviour).
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
+      interval: "monthly"
+    open-pull-requests-limit: 5
     groups:
-      minor-and-patch:
+      npm-dependencies:
+        patterns:
+          - "*"
         update-types:
+          - "major"
           - "minor"
           - "patch"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
