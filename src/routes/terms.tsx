@@ -55,7 +55,7 @@ function TermsPage() {
             Terms of Service
           </h1>
           <p className="mt-4 max-w-2xl text-[14px] leading-relaxed text-text-muted">
-            Effective date: 20 August 2026.
+            Effective date: 5 September 2026.
           </p>
         </section>
 
@@ -63,8 +63,9 @@ function TermsPage() {
           <Section title="Acceptance of terms">
             <p>
               By creating an account or using CreatorOS AI ("CreatorOS", "we",
-              "us"), you agree to these Terms of Service. If you don't agree,
-              don't use CreatorOS.
+              "us"), operated by Md Farhan Akhter, founder of CreatorOS AI,
+              you agree to these Terms of Service. If you don't agree, don't
+              use CreatorOS.
             </p>
           </Section>
 
