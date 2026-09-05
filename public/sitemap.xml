@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Static sitemap of this app's public, unauthenticated routes only --
-  everything under session-gated pages (dashboard, studios, settings, etc.)
-  requires a session and is intentionally excluded, same as it's excluded
-  from search indexing by nature of requiring auth (see robots.txt).
+  Static sitemap of this app's public, unauthenticated routes only.
+  Everything under session-gated pages (dashboard, studios, settings, etc.)
+  requires a session and is intentionally excluded, the same way it is kept
+  out of search indexing by nature of requiring auth (see robots.txt).
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
