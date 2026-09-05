@@ -2,6 +2,8 @@
 
 An all-in-one AI workspace for content creators: AI Chat, Script Studio, Image Studio, and Thumbnail Studio, alongside real Projects, a Content Planner, Files, and usage-based billing.
 
+Live: **[creatoros-core-vision.vercel.app](https://creatoros-core-vision.vercel.app)**
+
 ## Stack
 
 - **Frontend/routing**: TanStack Start (React), Vite
@@ -10,9 +12,9 @@ An all-in-one AI workspace for content creators: AI Chat, Script Studio, Image S
 - **AI images**: Cloudflare Workers AI, stored via Cloudinary
 - **Billing**: Polar.sh (Merchant of Record — handles global tax/compliance)
 - **Email**: Resend
-- **Deployment target**: Vercel (current — plain Node.js runtime; `vercel deploy --prod` ships the whole app). Cloudflare Workers is also fully supported and kept deployable (`wrangler deploy`) as a second, independent target against the same database.
+- **Hosting**: Vercel (Node.js runtime) — `main` auto-deploys on push
 
-See `CLAUDE.md` for the full build history, architecture decisions, and every feature's implementation/verification notes — it's a detailed running engineering log, useful if you want the "why" behind a specific piece of code.
+See `CLAUDE.md` for current state and architecture decisions, and `docs/BUILD-HISTORY.md` for the phase-by-phase build log with verification notes.
 
 ## Getting started
 
@@ -23,7 +25,7 @@ See `CLAUDE.md` for the full build history, architecture decisions, and every fe
    npm install
    npm run dev
    ```
-   Opens on `http://localhost:8080` by default — make sure `BETTER_AUTH_URL` in `.env` matches whatever port it actually starts on.
+   The dev server starts on `http://localhost:8080`, or the next free port (often `8081`). Make sure `BETTER_AUTH_URL` in `.env` matches the port it actually binds.
 4. **Build for production:**
    ```sh
    npm run build
@@ -31,10 +33,11 @@ See `CLAUDE.md` for the full build history, architecture decisions, and every fe
 
 ## Deploying
 
-- **Vercel (current):** `npx vercel deploy --prod` — secrets live in Vercel's own Production/Preview environment variables.
-- **Cloudflare Workers (also supported):** `wrangler deploy` — config lives in `wrangler.jsonc`.
+`main` is connected to Vercel and deploys automatically on push. For a manual deploy: `npx vercel deploy --prod`. Secrets live in Vercel's Production/Preview environment variables.
 
-See `docs/OPERATIONS.md` for the full deployment runbook covering both targets: rollback, the repeatable smoke test (`npm run smoke-test`), migration procedure, recovery objectives, and incident response.
+See `docs/OPERATIONS.md` for the full runbook: rollback, the repeatable smoke test (`npm run smoke-test`), migration procedure, recovery objectives, and incident response.
+
+> A Cloudflare Workers build target also exists on the `feature/v1-functional` branch (frozen). `main` targets Vercel only.
 
 ## Project structure
 
