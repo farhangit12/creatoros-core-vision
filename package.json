@@ -1,5 +1,7 @@
 {
   "name": "tanstack_start_ts",
+  "description": "CreatorOS — an AI content workspace for creators: script, image and thumbnail studios, AI chat, a content planner, file storage, and usage-based billing.",
+  "author": "Md Farhan Akhter",
   "private": true,
   "sideEffects": false,
   "type": "module",
