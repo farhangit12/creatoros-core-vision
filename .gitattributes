@@ -1,0 +1,20 @@
+# Normalise line endings: store LF in the repo, check out native on Windows.
+* text=auto eol=lf
+
+# Explicit binary types (never touched by line-ending normalisation).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+
+# Keep shell scripts LF regardless of platform.
+*.sh text eol=lf
+
+# Collapse generated files in diffs and language stats.
+src/routeTree.gen.ts linguist-generated=true
+package-lock.json linguist-generated=true
